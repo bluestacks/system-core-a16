@@ -85,7 +85,7 @@ void LaunchFirstStageSnapuserd() {
     if (pid == 0) {
         socket->Publish();
 
-        char arg0[] = "/system/bin/snapuserd";
+        char* arg0 = const_cast<char*>(kSnapuserdPath);
         char arg1[] = "-user_snapshot";
         char* const argv[] = {arg0, arg1, nullptr};
         if (execv(arg0, argv) < 0) {
