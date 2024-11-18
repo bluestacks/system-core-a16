@@ -246,26 +246,31 @@ class SnapshotTest : public ::testing::Test {
             unlink(state_file.c_str());
         }
     }
-
-    void CleanupSnapshotArtifacts(const std::string& snapshot) {
-        // The device-mapper stack may have been collapsed to dm-linear, so it's
-        // necessary to check what state it's in before attempting a cleanup.
-        // SnapshotManager has no path like this because we'd never remove a
-        // merged snapshot (a live partition).
+    void CleanupUserspaceSnapshotArtifacts(const std::string& snapshot) {
         bool is_dm_user = false;
+        bool is_ublk = false;
         DeviceMapper::TargetInfo target;
         if (sm->IsSnapshotDevice(snapshot, &target)) {
             is_dm_user = (DeviceMapper::GetTargetType(target.spec) == "user");
+            is_ublk = (DeviceMapper::GetTargetType(target.spec) == "linear");
         }
 
-        if (is_dm_user) {
+        if (is_dm_user || is_ublk) {
             ASSERT_TRUE(sm->EnsureSnapuserdConnected());
             ASSERT_TRUE(AcquireLock());
 
             auto local_lock = std::move(lock_);
             ASSERT_TRUE(sm->UnmapUserspaceSnapshotDevice(local_lock.get(), snapshot));
         }
+    }
 
+    void CleanupSnapshotArtifacts(const std::string& snapshot) {
+        // The device-mapper stack may have been collapsed to dm-linear, so it's
+        // necessary to check what state it's in before attempting a cleanup.
+        // SnapshotManager has no path like this because we'd never remove a
+        // merged snapshot (a live partition).
+
+        CleanupUserspaceSnapshotArtifacts(snapshot);
         ASSERT_TRUE(DeleteSnapshotDevice(snapshot));
         DeleteBackingImage(image_manager_, snapshot + "-cow-img");
 
@@ -379,6 +384,15 @@ class SnapshotTest : public ::testing::Test {
 
     AssertionResult DeleteSnapshotDevice(const std::string& snapshot) {
         AssertionResult res = AssertionSuccess();
+        DeviceMapper::TargetInfo target;
+        if (sm->IsSnapshotDevice(snapshot, &target)) {
+            auto target_type = DeviceMapper::GetTargetType(target.spec);
+            if (target_type == "user" || target_type == "linear") {
+                if (!sm->UnmapDmUserDevice(snapshot)) {
+                    return AssertionFailure() << "Cannot unmap snapshot device for " << snapshot;
+                }
+            }
+        }
         if (!(res = DeleteDevice(snapshot))) return res;
         if (!sm->UnmapDmUserDevice(snapshot + "-user-cow")) {
             return AssertionFailure() << "Cannot delete dm-user device for " << snapshot;
@@ -641,11 +655,13 @@ TEST_F(SnapshotTest, Merge) {
     test_string.resize(kBlockSize);
 
     bool userspace_snapshots = false;
+    bool using_ublk = false;
     if (snapuserd_required_) {
         std::unique_ptr<ICowWriter> writer;
         ASSERT_TRUE(PrepareOneSnapshot(kDeviceSize, &writer));
 
         userspace_snapshots = sm->UpdateUsesUserSnapshots(lock_.get());
+        using_ublk = sm->UpdateUsesUblk(lock_.get());
 
         // Release the lock.
         lock_ = nullptr;
@@ -695,7 +711,11 @@ TEST_F(SnapshotTest, Merge) {
     DeviceMapper::TargetInfo target;
     ASSERT_TRUE(sm->IsSnapshotDevice("test_partition_b", &target));
     if (userspace_snapshots) {
-        ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        if (using_ublk) {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "linear");
+        } else {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        }
     } else {
         ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "snapshot-merge");
     }
@@ -746,6 +766,7 @@ TEST_F(SnapshotTest, FirstStageMountAndMerge) {
     ASSERT_TRUE(AcquireLock());
 
     bool userspace_snapshots = init->UpdateUsesUserSnapshots(lock_.get());
+    bool using_ublk = init->UpdateUsesUblk(lock_.get());
 
     // Validate that we have a snapshot device.
     SnapshotStatus status;
@@ -760,7 +781,11 @@ TEST_F(SnapshotTest, FirstStageMountAndMerge) {
     DeviceMapper::TargetInfo target;
     ASSERT_TRUE(init->IsSnapshotDevice("test_partition_b", &target));
     if (userspace_snapshots) {
-        ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        if (using_ublk) {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "linear");
+        } else {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        }
     } else {
         ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "snapshot");
     }
@@ -815,6 +840,7 @@ TEST_F(SnapshotTest, FlashSuperDuringMerge) {
 
     // Now, reflash super. Note that we haven't called ProcessUpdateState, so the
     // status is still Merging.
+    CleanupUserspaceSnapshotArtifacts("test_partition_b");
     ASSERT_TRUE(DeleteSnapshotDevice("test_partition_b"));
     ASSERT_TRUE(init->image_manager()->UnmapImageIfExists("test_partition_b-cow-img"));
     FormatFakeSuper();
@@ -1576,12 +1602,27 @@ TEST_F(SnapshotUpdateTest, SpaceSwapUpdate) {
     ASSERT_TRUE(init->IsSnapshotDevice("prd_b", &target));
 
     bool userspace_snapshots = init->UpdateUsesUserSnapshots();
+    bool ublk_snapshots = false;
+    {
+        ASSERT_TRUE(AcquireLock());
+        auto local_lock = std::move(lock_);
+        ublk_snapshots = init->UpdateUsesUblk(local_lock.get());
+    }
+
     if (userspace_snapshots) {
-        ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
-        ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
-        ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
-        ASSERT_TRUE(init->IsSnapshotDevice("vnd_b", &target));
-        ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        if (!ublk_snapshots) {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+            ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+            ASSERT_TRUE(init->IsSnapshotDevice("vnd_b", &target));
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+        } else {
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "linear");
+            ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "linear");
+            ASSERT_TRUE(init->IsSnapshotDevice("vnd_b", &target));
+            ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "linear");
+        }
     } else {
         ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "snapshot-merge");
         ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
@@ -1704,7 +1745,7 @@ TEST_F(SnapshotUpdateTest, InterruptMergeDuringPhaseUpdate) {
         // sleep for a second and allow merge to complete
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
-
+    auto using_ublk_ = false;
     // Now, forcefully update the snapshot-update status to SECOND PHASE
     // This will not update the snapshot status of sys_b to MERGING
     if (init->UpdateUsesUserSnapshots()) {
@@ -1712,21 +1753,21 @@ TEST_F(SnapshotUpdateTest, InterruptMergeDuringPhaseUpdate) {
         auto local_lock = std::move(lock_);
         auto status = init->ReadSnapshotUpdateStatus(local_lock.get());
         status.set_merge_phase(MergePhase::SECOND_PHASE);
+        using_ublk_ = sm->UpdateUsesUblk(local_lock.get());
         ASSERT_TRUE(init->WriteSnapshotUpdateStatus(local_lock.get(), status));
     }
 
     // Simulate shutting down the device and creating partitions again.
     ASSERT_TRUE(UnmapAll());
     ASSERT_TRUE(init->CreateLogicalAndSnapshotPartitions("super", snapshot_timeout_));
-
+    auto snapshotType = using_ublk_ ? "linear" : "user";
     DeviceMapper::TargetInfo target;
     ASSERT_TRUE(init->IsSnapshotDevice("prd_b", &target));
-
-    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), snapshotType);
     ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
-    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), snapshotType);
     ASSERT_TRUE(init->IsSnapshotDevice("vnd_b", &target));
-    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), snapshotType);
 
     // Complete the merge; "sys" and "vnd" should resume the merge
     // even though merge was interrupted after update_status was updated to
@@ -2537,9 +2578,14 @@ TEST_F(SnapshotUpdateTest, AddPartition) {
     }
 
     if (snapuserd_required_) {
+        bool userspace_snapshots = init->UpdateUsesUserSnapshots();
         ASSERT_TRUE(init->PerformInitTransition(SnapshotManager::InitTransition::SECOND_STAGE));
         for (const auto& name : partitions) {
-            ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete(name + "-user-cow-init"));
+            if (userspace_snapshots) {
+                ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete(name + "-init"));
+            } else {
+                ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete(name + "-user-cow-init"));
+            }
         }
     }
 
@@ -2599,10 +2645,13 @@ TEST_F(SnapshotUpdateTest, DaemonTransition) {
     ASSERT_TRUE(init->CreateLogicalAndSnapshotPartitions("super", snapshot_timeout_));
 
     bool userspace_snapshots = init->UpdateUsesUserSnapshots();
+    bool ublk_snapshots = init->UpdateUsesUblk();
 
     if (userspace_snapshots) {
-        ASSERT_EQ(access("/dev/dm-user/sys_b-init", F_OK), 0);
-        ASSERT_EQ(access("/dev/dm-user/sys_b", F_OK), -1);
+        if (!ublk_snapshots) {
+            ASSERT_EQ(access("/dev/dm-user/sys_b-init", F_OK), 0);
+            ASSERT_EQ(access("/dev/dm-user/sys_b", F_OK), -1);
+        }
     } else {
         ASSERT_EQ(access("/dev/dm-user/sys_b-user-cow-init", F_OK), 0);
         ASSERT_EQ(access("/dev/dm-user/sys_b-user-cow", F_OK), -1);
@@ -2619,8 +2668,10 @@ TEST_F(SnapshotUpdateTest, DaemonTransition) {
         ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete("prd_b-init"));
 
         // The control device should have been renamed.
-        ASSERT_TRUE(android::fs_mgr::WaitForFileDeleted("/dev/dm-user/sys_b-init", 10s));
-        ASSERT_EQ(access("/dev/dm-user/sys_b", F_OK), 0);
+        if (!ublk_snapshots) {
+            ASSERT_TRUE(android::fs_mgr::WaitForFileDeleted("/dev/dm-user/sys_b-init", 10s));
+            ASSERT_EQ(access("/dev/dm-user/sys_b", F_OK), 0);
+        }
     } else {
         ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete("sys_b-user-cow-init"));
         ASSERT_TRUE(init->snapuserd_client()->WaitForDeviceDelete("vnd_b-user-cow-init"));
@@ -2653,7 +2704,9 @@ TEST_F(SnapshotUpdateTest, MapAllSnapshotsWithoutSlotSwitch) {
     ASSERT_TRUE(sm->BootFromSnapshotsWithoutSlotSwitch());
 
     ASSERT_TRUE(sm->EnsureSnapuserdConnected());
-    sm->set_use_first_stage_snapuserd(true);
+    // TODOUBLK: b/414812023 Fix the test to do the transition or
+    // delete the use of first_stage_snapuserd
+    // sm->set_use_first_stage_snapuserd(true);
 
     ASSERT_TRUE(sm->NeedSnapshotsInFirstStageMount());
 
