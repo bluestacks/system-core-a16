@@ -195,7 +195,7 @@ static int filter_usb_device(char* sysfs_name,
                              char *ptr, int len, int writable,
                              ifc_match_func callback,
                              int *ept_in_id, int *ept_out_id, int *ifc_id,
-                             int *cfg_id)
+                             int *cfg_id, int *alt_ifc_id)
 {
     struct usb_device_descriptor *dev;
     struct usb_config_descriptor *cfg;
@@ -204,7 +204,6 @@ static int filter_usb_device(char* sysfs_name,
     struct usb_ifc_info info;
 
     int in, out;
-    unsigned i;
     unsigned e;
 
     if (check(ptr, len, USB_DT_DEVICE, USB_DT_DEVICE_SIZE))
@@ -233,6 +232,16 @@ static int filter_usb_device(char* sysfs_name,
         ptr += cfg->wTotalLength;
     } while (1);
 
+    // There is less data then it should be based on config descriptor.
+    if (len < cfg->wTotalLength - cfg->bLength) {
+        DBG("Config %d has 0x%x bytes length, but only 0x%x bytes are left\n",
+            cfg->bConfigurationValue, cfg->wTotalLength, len + cfg->bLength);
+        return -1;
+    }
+
+    // At this point, only interfaces within active configuration are interesting.
+    len = cfg->wTotalLength - cfg->bLength;
+
     info.dev_vendor = dev->idVendor;
     info.dev_product = dev->idProduct;
     info.dev_class = dev->bDeviceClass;
@@ -259,18 +268,16 @@ static int filter_usb_device(char* sysfs_name,
         }
     }
 
-    for(i = 0; i < cfg->bNumInterfaces; i++) {
-
-        while (len > 0) {
-	        struct usb_descriptor_header *hdr = (struct usb_descriptor_header *)ptr;
-            if (check(hdr, len, USB_DT_INTERFACE, USB_DT_INTERFACE_SIZE) == 0)
-                break;
+    while (len > 0) {
+        struct usb_descriptor_header *hdr = (struct usb_descriptor_header *)ptr;
+        if (check(hdr, len, USB_DT_INTERFACE, USB_DT_INTERFACE_SIZE)) {
+            // This code parses only standard interfaces, skip everything else
+            // (e.g interface association descriptor).
             len -= hdr->bLength;
             ptr += hdr->bLength;
+            DBG("Skip interface of type 0x%02x\n", hdr->bDescriptorType);
+            continue;
         }
-
-        if (len <= 0)
-            return -1;
 
         ifc = (struct usb_interface_descriptor *)ptr;
         len -= ifc->bLength;
@@ -332,6 +339,7 @@ static int filter_usb_device(char* sysfs_name,
             *ept_in_id = in;
             *ept_out_id = out;
             *ifc_id = ifc->bInterfaceNumber;
+            *alt_ifc_id = ifc->bAlternateSetting;
             return 0;
         }
     }
@@ -364,7 +372,7 @@ static std::unique_ptr<usb_handle> find_usb_device(const char* base, ifc_match_f
     std::unique_ptr<usb_handle> usb;
     char devname[64];
     char desc[1024];
-    int n, in, out, ifc, cfg;
+    int n, in, out, ifc, cfg, alt_ifc;
 
     struct dirent *de;
     int fd;
@@ -392,7 +400,7 @@ static std::unique_ptr<usb_handle> find_usb_device(const char* base, ifc_match_f
             n = read(fd, desc, sizeof(desc));
 
             if (filter_usb_device(de->d_name, desc, n, writable, callback,
-                                  &in, &out, &ifc, &cfg) == 0) {
+                                  &in, &out, &ifc, &cfg, &alt_ifc) == 0) {
                 usb.reset(new usb_handle());
                 strcpy(usb->fname, devname);
                 usb->ep_in = in;
@@ -410,6 +418,20 @@ static std::unique_ptr<usb_handle> find_usb_device(const char* base, ifc_match_f
                     close(fd);
                     usb.reset();
                     continue;
+                }
+                // Select alternate setting if it is not default.
+                if (alt_ifc != 0) {
+                    struct usbdevfs_setinterface set_ifc = {
+                        .interface = (unsigned int)ifc,
+                        .altsetting = (unsigned int)alt_ifc,
+                    };
+
+                    n = ioctl(fd, USBDEVFS_SETINTERFACE, &set_ifc);
+                    if (n != 0) {
+                        close(fd);
+                        usb.reset();
+                        continue;
+                    }
                 }
             } else {
                 close(fd);
