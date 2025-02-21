@@ -112,24 +112,28 @@ Result<void> ServiceParser::ParseCritical(std::vector<std::string>&& args) {
     for (auto it = args.begin() + 1; it != args.end(); ++it) {
         auto arg = android::base::Split(*it, "=");
         if (arg.size() != 2) {
-            return Error() << "critical: Argument '" << *it << "' is not supported";
+            LOG(ERROR) << "critical: Argument '" << *it << "' is not supported";
+            continue;
         } else if (arg[0] == "target") {
             fatal_reboot_target = arg[1];
         } else if (arg[0] == "window") {
             int minutes;
             auto window = ExpandProps(arg[1]);
             if (!window.ok()) {
-                return Error() << "critical: Could not expand argument ': " << arg[1];
+                LOG(ERROR) << "critical: Could not expand argument ': " << arg[1];
+                continue;
             }
             if (*window == "off") {
-                return {};
+                continue;
             }
             if (!ParseInt(*window, &minutes, 0)) {
-                return Error() << "critical: 'fatal_crash_window' must be an integer > 0";
+                LOG(ERROR) << "critical: 'fatal_crash_window' must be an integer > 0";
+                continue;
             }
             fatal_crash_window = std::chrono::minutes(minutes);
         } else {
-            return Error() << "critical: Argument '" << *it << "' is not supported";
+            LOG(ERROR) << "critical: Argument '" << *it << "' is not supported";
+            continue;
         }
     }
 
