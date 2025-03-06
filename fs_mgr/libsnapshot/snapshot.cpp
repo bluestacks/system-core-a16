@@ -1792,6 +1792,10 @@ bool SnapshotManager::PerformInitTransition(InitTransition transition,
         if (worker_count != 0) {
             snapuserd_argv->emplace_back("-worker_count=" + std::to_string(worker_count));
         }
+        uint32_t verify_block_size = GetVerificationBlockSize(lock.get());
+        if (verify_block_size != 0) {
+            snapuserd_argv->emplace_back("-verify_block_size=" + std::to_string(verify_block_size));
+        }
     }
 
     size_t num_cows = 0;
@@ -2233,6 +2237,11 @@ uint32_t SnapshotManager::GetUpdateCowOpMergeSize(LockedFile* lock) {
 uint32_t SnapshotManager::GetUpdateWorkerCount(LockedFile* lock) {
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
     return update_status.num_worker_threads();
+}
+
+uint32_t SnapshotManager::GetVerificationBlockSize(LockedFile* lock) {
+    SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
+    return update_status.verify_block_size();
 }
 
 bool SnapshotManager::MarkSnapuserdFromSystem() {
@@ -3227,6 +3236,7 @@ bool SnapshotManager::WriteUpdateState(LockedFile* lock, UpdateState state,
         status.set_o_direct(old_status.o_direct());
         status.set_cow_op_merge_size(old_status.cow_op_merge_size());
         status.set_num_worker_threads(old_status.num_worker_threads());
+        status.set_verify_block_size(old_status.verify_block_size());
     }
     return WriteSnapshotUpdateStatus(lock, status);
 }
@@ -3613,7 +3623,8 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.cow_op_merge_size", 0));
         status.set_num_worker_threads(
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.num_worker_threads", 0));
-
+        status.set_verify_block_size(
+                android::base::GetUintProperty<uint32_t>("ro.virtual_ab.verify_block_size", 0));
     } else if (legacy_compression) {
         LOG(INFO) << "Virtual A/B using legacy snapuserd";
     } else {
@@ -4051,6 +4062,7 @@ bool SnapshotManager::Dump(std::ostream& os) {
     ss << "Using o_direct: " << update_status.o_direct() << std::endl;
     ss << "Cow op merge size (0 for uncapped): " << update_status.cow_op_merge_size() << std::endl;
     ss << "Worker thread count: " << update_status.num_worker_threads() << std::endl;
+    ss << "Verify block size: " << update_status.verify_block_size() << std::endl;
     ss << "Using XOR compression: " << GetXorCompressionEnabledProperty() << std::endl;
     ss << "Current slot: " << device_->GetSlotSuffix() << std::endl;
     ss << "Boot indicator: booting from " << GetCurrentSlot() << " slot" << std::endl;

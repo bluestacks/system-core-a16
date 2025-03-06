@@ -20,7 +20,11 @@
 #include <gflags/gflags.h>
 #include <snapuserd/snapuserd_client.h>
 
+#include <storage_literals/storage_literals.h>
+
 #include "snapuserd_daemon.h"
+
+using namespace android::storage_literals;
 
 DEFINE_string(socket, android::snapshot::kSnapuserdSocket, "Named socket or socket path.");
 DEFINE_bool(no_socket, false,
@@ -32,6 +36,7 @@ DEFINE_bool(io_uring, false, "If true, io_uring feature is enabled");
 DEFINE_bool(o_direct, false, "If true, enable direct reads on source device");
 DEFINE_int32(cow_op_merge_size, 0, "number of operations to be processed at once");
 DEFINE_int32(worker_count, 4, "number of worker threads used to serve I/O requests to dm-user");
+DEFINE_int32(verify_block_size, 1_MiB, "block sized used during verification of snapshots");
 
 namespace android {
 namespace snapshot {
@@ -115,9 +120,9 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
             LOG(ERROR) << "Malformed message, expected at least four sub-arguments.";
             return false;
         }
-        auto handler =
-                user_server_.AddHandler(parts[0], parts[1], parts[2], parts[3], FLAGS_worker_count,
-                                        FLAGS_o_direct, FLAGS_cow_op_merge_size);
+        auto handler = user_server_.AddHandler(parts[0], parts[1], parts[2], parts[3],
+                                               FLAGS_worker_count, FLAGS_o_direct,
+                                               FLAGS_cow_op_merge_size, FLAGS_verify_block_size);
         if (!handler || !user_server_.StartHandler(parts[0])) {
             return false;
         }

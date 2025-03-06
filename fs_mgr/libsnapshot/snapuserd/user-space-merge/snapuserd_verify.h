@@ -34,7 +34,7 @@ using namespace android::storage_literals;
 
 class UpdateVerify {
   public:
-    UpdateVerify(const std::string& misc_name);
+    UpdateVerify(const std::string& misc_name, uint32_t verify_block_size);
     void VerifyUpdatePartition();
     bool CheckPartitionVerification();
 

@@ -57,7 +57,7 @@ class ISnapshotHandlerManager {
             const std::string& misc_name, const std::string& cow_device_path,
             const std::string& backing_device, const std::string& base_path_merge,
             std::shared_ptr<IBlockServerOpener> opener, int num_worker_threads, bool use_iouring,
-            bool o_direct, uint32_t cow_op_merge_size) = 0;
+            bool o_direct, uint32_t cow_op_merge_size, uint32_t verify_block_size) = 0;
 
     // Start serving requests on a snapshot handler.
     virtual bool StartHandler(const std::string& misc_name) = 0;
@@ -97,13 +97,12 @@ class ISnapshotHandlerManager {
 class SnapshotHandlerManager final : public ISnapshotHandlerManager {
   public:
     SnapshotHandlerManager();
-    std::shared_ptr<HandlerThread> AddHandler(const std::string& misc_name,
-                                              const std::string& cow_device_path,
-                                              const std::string& backing_device,
-                                              const std::string& base_path_merge,
-                                              std::shared_ptr<IBlockServerOpener> opener,
-                                              int num_worker_threads, bool use_iouring,
-                                              bool o_direct, uint32_t cow_op_merge_size) override;
+    std::shared_ptr<HandlerThread> AddHandler(
+            const std::string& misc_name, const std::string& cow_device_path,
+            const std::string& backing_device, const std::string& base_path_merge,
+            std::shared_ptr<IBlockServerOpener> opener, int num_worker_threads, bool use_iouring,
+            bool o_direct, uint32_t cow_op_merge_size, uint32_t verify_block_size) override;
+
     bool StartHandler(const std::string& misc_name) override;
     bool DeleteHandler(const std::string& misc_name) override;
     bool InitiateMerge(const std::string& misc_name) override;

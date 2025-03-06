@@ -37,7 +37,7 @@ SnapshotHandler::SnapshotHandler(std::string misc_name, std::string cow_device,
                                  std::string backing_device, std::string base_path_merge,
                                  std::shared_ptr<IBlockServerOpener> opener, int num_worker_threads,
                                  bool use_iouring, bool perform_verification, bool o_direct,
-                                 uint32_t cow_op_merge_size) {
+                                 uint32_t cow_op_merge_size, uint32_t verify_block_size) {
     misc_name_ = std::move(misc_name);
     cow_device_ = std::move(cow_device);
     backing_store_device_ = std::move(backing_device);
@@ -48,6 +48,7 @@ SnapshotHandler::SnapshotHandler(std::string misc_name, std::string cow_device,
     perform_verification_ = perform_verification;
     o_direct_ = o_direct;
     cow_op_merge_size_ = cow_op_merge_size;
+    verify_block_size_ = verify_block_size;
 }
 
 bool SnapshotHandler::InitializeWorkers() {
@@ -68,7 +69,7 @@ bool SnapshotHandler::InitializeWorkers() {
     read_ahead_thread_ = std::make_unique<ReadAhead>(cow_device_, backing_store_device_, misc_name_,
                                                      GetSharedPtr(), cow_op_merge_size_);
 
-    update_verify_ = std::make_unique<UpdateVerify>(misc_name_);
+    update_verify_ = std::make_unique<UpdateVerify>(misc_name_, verify_block_size_);
 
     return true;
 }

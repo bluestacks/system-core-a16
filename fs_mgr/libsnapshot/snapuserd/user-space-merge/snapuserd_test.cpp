@@ -68,6 +68,7 @@ struct TestParam {
     int block_size;
     int num_threads;
     uint32_t cow_op_merge_size;
+    uint32_t verification_block_size;
 };
 
 class SnapuserdTestBase : public ::testing::TestWithParam<TestParam> {
@@ -731,9 +732,10 @@ void SnapuserdTest::InitCowDevice() {
     auto opener = factory->CreateOpener(system_device_ctrl_name_);
     handlers_->DisableVerification();
     const TestParam params = GetParam();
-    auto handler = handlers_->AddHandler(
-            system_device_ctrl_name_, cow_system_->path, base_dev_->GetPath(), base_dev_->GetPath(),
-            opener, 1, params.io_uring, params.o_direct, params.cow_op_merge_size);
+    auto handler =
+            handlers_->AddHandler(system_device_ctrl_name_, cow_system_->path, base_dev_->GetPath(),
+                                  base_dev_->GetPath(), opener, 1, params.io_uring, params.o_direct,
+                                  params.cow_op_merge_size, params.verification_block_size);
     ASSERT_NE(handler, nullptr);
     ASSERT_NE(handler->snapuserd(), nullptr);
 #ifdef __ANDROID__
@@ -1275,7 +1277,8 @@ void HandlerTest::InitializeDevice() {
     const TestParam params = GetParam();
     handler_ = std::make_shared<SnapshotHandler>(
             system_device_ctrl_name_, cow_system_->path, base_dev_->GetPath(), base_dev_->GetPath(),
-            opener_, 1, false, false, params.o_direct, params.cow_op_merge_size);
+            opener_, 1, false, false, params.o_direct, params.cow_op_merge_size,
+            params.verification_block_size);
     ASSERT_TRUE(handler_->InitCowDevice());
     ASSERT_TRUE(handler_->InitializeWorkers());
 

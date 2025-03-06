@@ -31,8 +31,10 @@ using namespace android;
 using namespace android::dm;
 using android::base::unique_fd;
 
-UpdateVerify::UpdateVerify(const std::string& misc_name)
-    : misc_name_(misc_name), state_(UpdateVerifyState::VERIFY_UNKNOWN) {}
+UpdateVerify::UpdateVerify(const std::string& misc_name, uint32_t verify_block_size)
+    : misc_name_(misc_name),
+      state_(UpdateVerifyState::VERIFY_UNKNOWN),
+      verify_block_size_(verify_block_size) {}
 
 bool UpdateVerify::CheckPartitionVerification() {
     auto now = std::chrono::system_clock::now();
@@ -204,9 +206,8 @@ bool UpdateVerify::VerifyBlocks(const std::string& partition_name,
         }
     }
 
-    SNAP_LOG(DEBUG) << "Verification success with io_uring: "
-                    << " dev_sz: " << dev_sz << " partition_name: " << partition_name
-                    << " total_read: " << total_read;
+    SNAP_LOG(DEBUG) << "Verification success with io_uring: " << " dev_sz: " << dev_sz
+                    << " partition_name: " << partition_name << " total_read: " << total_read;
 
     return true;
 }

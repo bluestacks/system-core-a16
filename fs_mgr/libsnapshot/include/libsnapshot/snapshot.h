@@ -865,6 +865,9 @@ class SnapshotManager final : public ISnapshotManager {
     // Get number of threads to perform post OTA boot verification
     uint32_t GetUpdateWorkerCount(LockedFile* lock);
 
+    // Get the verification block size
+    uint32_t GetVerificationBlockSize(LockedFile* lock);
+
     // Wrapper around libdm, with diagnostics.
     bool DeleteDeviceIfExists(const std::string& name,
                               const std::chrono::milliseconds& timeout_ms = {});
