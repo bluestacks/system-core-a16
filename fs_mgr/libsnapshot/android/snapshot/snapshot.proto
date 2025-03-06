@@ -17,7 +17,6 @@ package android.snapshot;
 
 option optimize_for = LITE_RUNTIME;
 
-// Next: 4
 enum SnapshotState {
     // No snapshot is found.
     NONE = 0;
@@ -34,7 +33,6 @@ enum SnapshotState {
     MERGE_COMPLETED = 3;
 }
 
-// Next: 3
 enum MergePhase {
     // No merge is in progress.
     NO_MERGE = 0;
@@ -46,7 +44,6 @@ enum MergePhase {
     SECOND_PHASE = 2;
 }
 
-// Next: 13
 message SnapshotStatus {
     // Name of the snapshot. This is usually the name of the snapshotted
     // logical partition; for example, "system_b".
@@ -131,7 +128,6 @@ message SnapshotStatus {
     reserved 20;
 }
 
-// Next: 8
 enum UpdateState {
     // No update or merge is in progress.
     None = 0;
@@ -160,7 +156,6 @@ enum UpdateState {
     Cancelled = 7;
 };
 
-// Next 14:
 //
 // To understand the source of each failure, read snapshot.cpp. To handle new
 // sources of failure, avoid reusing an existing code; add a new code instead.
@@ -188,7 +183,6 @@ enum MergeFailureCode {
     WrongMergeCountConsistencyCheck = 20;
 };
 
-// Next: 8
 message SnapshotUpdateStatus {
     UpdateState state = 1;
 
@@ -241,7 +235,6 @@ message SnapshotUpdateStatus {
     uint32 num_verification_threads = 16;
 }
 
-// Next: 10
 message SnapshotMergeReport {
     // Status of the update after the merge attempts.
     UpdateState state = 1;
