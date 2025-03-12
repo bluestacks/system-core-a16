@@ -31,10 +31,12 @@ using namespace android;
 using namespace android::dm;
 using android::base::unique_fd;
 
-UpdateVerify::UpdateVerify(const std::string& misc_name, uint32_t verify_block_size)
+UpdateVerify::UpdateVerify(const std::string& misc_name, uint32_t verify_block_size,
+                           uint32_t num_verification_threads)
     : misc_name_(misc_name),
       state_(UpdateVerifyState::VERIFY_UNKNOWN),
-      verify_block_size_(verify_block_size) {}
+      verify_block_size_(verify_block_size),
+      num_verification_threads_(num_verification_threads) {}
 
 bool UpdateVerify::CheckPartitionVerification() {
     auto now = std::chrono::system_clock::now();
@@ -251,6 +253,9 @@ bool UpdateVerify::VerifyPartition(const std::string& partition_name,
     int num_threads = kMinThreadsToVerify;
     if (dev_sz > threshold_size_) {
         num_threads = kMaxThreadsToVerify;
+        if (num_verification_threads_ != 0) {
+            num_threads = num_verification_threads_;
+        }
     }
 
     std::vector<std::future<bool>> threads;

@@ -89,7 +89,8 @@ class UserSnapshotServer {
                                               const std::string& base_path_merge,
                                               std::optional<uint32_t> num_worker_threads,
                                               bool o_direct = false, uint32_t cow_op_merge_size = 0,
-                                              uint32_t verify_block_size = 0);
+                                              uint32_t verify_block_size = 0,
+                                              uint32_t num_verification_threads = 0);
     bool StartHandler(const std::string& misc_name);
 
     void SetTerminating() { terminating_ = true; }

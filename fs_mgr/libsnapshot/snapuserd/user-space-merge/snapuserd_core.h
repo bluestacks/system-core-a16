@@ -105,7 +105,8 @@ class SnapshotHandler : public std::enable_shared_from_this<SnapshotHandler> {
     SnapshotHandler(std::string misc_name, std::string cow_device, std::string backing_device,
                     std::string base_path_merge, std::shared_ptr<IBlockServerOpener> opener,
                     int num_workers, bool use_iouring, bool perform_verification, bool o_direct,
-                    uint32_t cow_op_merge_size, uint32_t verify_block_sze);
+                    uint32_t cow_op_merge_size, uint32_t verify_block_sze,
+                    uint32_t num_verification_threads);
     bool InitCowDevice();
     bool Start();
 
@@ -257,6 +258,7 @@ class SnapshotHandler : public std::enable_shared_from_this<SnapshotHandler> {
     bool o_direct_ = false;
     uint32_t cow_op_merge_size_ = 0;
     uint32_t verify_block_size_ = 0;
+    uint32_t num_verification_threads_ = 0;
     std::unique_ptr<UpdateVerify> update_verify_;
     std::shared_ptr<IBlockServerOpener> block_server_opener_;
 

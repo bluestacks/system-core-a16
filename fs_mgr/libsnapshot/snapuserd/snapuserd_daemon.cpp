@@ -37,6 +37,7 @@ DEFINE_bool(o_direct, false, "If true, enable direct reads on source device");
 DEFINE_int32(cow_op_merge_size, 0, "number of operations to be processed at once");
 DEFINE_int32(worker_count, 4, "number of worker threads used to serve I/O requests to dm-user");
 DEFINE_int32(verify_block_size, 1_MiB, "block sized used during verification of snapshots");
+DEFINE_int32(num_verify_threads, 3, "number of threads used during verification phase");
 
 namespace android {
 namespace snapshot {
@@ -120,9 +121,9 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
             LOG(ERROR) << "Malformed message, expected at least four sub-arguments.";
             return false;
         }
-        auto handler = user_server_.AddHandler(parts[0], parts[1], parts[2], parts[3],
-                                               FLAGS_worker_count, FLAGS_o_direct,
-                                               FLAGS_cow_op_merge_size, FLAGS_verify_block_size);
+        auto handler = user_server_.AddHandler(
+                parts[0], parts[1], parts[2], parts[3], FLAGS_worker_count, FLAGS_o_direct,
+                FLAGS_cow_op_merge_size, FLAGS_verify_block_size, FLAGS_num_verify_threads);
         if (!handler || !user_server_.StartHandler(parts[0])) {
             return false;
         }

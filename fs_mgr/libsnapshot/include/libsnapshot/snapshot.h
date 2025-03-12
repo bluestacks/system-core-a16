@@ -868,6 +868,9 @@ class SnapshotManager final : public ISnapshotManager {
     // Get the verification block size
     uint32_t GetVerificationBlockSize(LockedFile* lock);
 
+    // Get the number of verification threads
+    uint32_t GetNumVerificationThreads(LockedFile* lock);
+
     // Wrapper around libdm, with diagnostics.
     bool DeleteDeviceIfExists(const std::string& name,
                               const std::chrono::milliseconds& timeout_ms = {});
