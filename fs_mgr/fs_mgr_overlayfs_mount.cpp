@@ -51,7 +51,7 @@
 
 // Flag to simplify algorithm for choosing which partitions to overlay to simply overlay
 // all dynamic partitions
-constexpr bool overlay_dynamic_partitions_only = false;
+constexpr bool overlay_dynamic_partitions_only = true;
 
 using namespace std::literals;
 using namespace android::fs_mgr;
