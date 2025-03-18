@@ -21,6 +21,7 @@
 #include <snapuserd/snapuserd_client.h>
 
 #include <storage_literals/storage_literals.h>
+#include "user-space-merge/snapuserd_core.h"
 
 #include "snapuserd_daemon.h"
 
@@ -35,7 +36,8 @@ DEFINE_bool(user_snapshot, false, "If true, user-space snapshots are used");
 DEFINE_bool(io_uring, false, "If true, io_uring feature is enabled");
 DEFINE_bool(o_direct, false, "If true, enable direct reads on source device");
 DEFINE_int32(cow_op_merge_size, 0, "number of operations to be processed at once");
-DEFINE_int32(worker_count, 4, "number of worker threads used to serve I/O requests to dm-user");
+DEFINE_int32(worker_count, android::snapshot::kNumWorkerThreads,
+             "number of worker threads used to serve I/O requests to dm-user");
 DEFINE_int32(verify_block_size, 1_MiB, "block sized used during verification of snapshots");
 DEFINE_int32(num_verify_threads, 3, "number of threads used during verification phase");
 
@@ -101,9 +103,6 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
     MaskAllSignalsExceptIntAndTerm();
 
     user_server_.SetServerRunning();
-    if (FLAGS_io_uring) {
-        user_server_.SetIouringEnabled();
-    }
 
     if (FLAGS_socket_handoff) {
         return user_server_.RunForSocketHandoff();
@@ -116,14 +115,19 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
     }
     for (int i = arg_start; i < argc; i++) {
         auto parts = android::base::Split(argv[i], ",");
-
         if (parts.size() != 4) {
             LOG(ERROR) << "Malformed message, expected at least four sub-arguments.";
             return false;
         }
-        auto handler = user_server_.AddHandler(
-                parts[0], parts[1], parts[2], parts[3], FLAGS_worker_count, FLAGS_o_direct,
-                FLAGS_cow_op_merge_size, FLAGS_verify_block_size, FLAGS_num_verify_threads);
+        HandlerOptions options = {
+                .num_worker_threads = FLAGS_worker_count,
+                .use_iouring = FLAGS_io_uring,
+                .o_direct = FLAGS_o_direct,
+                .cow_op_merge_size = static_cast<uint32_t>(FLAGS_cow_op_merge_size),
+                .verify_block_size = static_cast<uint32_t>(FLAGS_verify_block_size),
+                .num_verification_threads = static_cast<uint32_t>(FLAGS_num_verify_threads),
+        };
+        auto handler = user_server_.AddHandler(parts[0], parts[1], parts[2], parts[3], options);
         if (!handler || !user_server_.StartHandler(parts[0])) {
             return false;
         }

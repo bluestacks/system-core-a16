@@ -35,6 +35,7 @@
 #include <snapuserd/dm_user_block_server.h>
 #include <snapuserd/snapuserd_client.h>
 #include "snapuserd_server.h"
+#include "user-space-merge/handler_manager.h"
 #include "user-space-merge/snapuserd_core.h"
 
 namespace android {
@@ -126,7 +127,8 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
             return Sendmsg(fd, "fail");
         }
 
-        auto handler = AddHandler(out[1], out[2], out[3], out[4], std::nullopt);
+        HandlerOptions options;
+        auto handler = AddHandler(out[1], out[2], out[3], out[4], options);
         if (!handler) {
             return Sendmsg(fd, "fail");
         }
@@ -348,11 +350,11 @@ void UserSnapshotServer::Interrupt() {
     SetTerminating();
 }
 
-std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(
-        const std::string& misc_name, const std::string& cow_device_path,
-        const std::string& backing_device, const std::string& base_path_merge,
-        std::optional<uint32_t> num_worker_threads, const bool o_direct, uint32_t cow_op_merge_size,
-        uint32_t verify_block_size, uint32_t num_verification_threads) {
+std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(const std::string& misc_name,
+                                                              const std::string& cow_device_path,
+                                                              const std::string& backing_device,
+                                                              const std::string& base_path_merge,
+                                                              HandlerOptions options) {
     // We will need multiple worker threads only during
     // device boot after OTA. For all other purposes,
     // one thread is sufficient. We don't want to consume
@@ -361,11 +363,8 @@ std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(
     //
     // During boot up, we need multiple threads primarily for
     // update-verification.
-    if (!num_worker_threads.has_value()) {
-        num_worker_threads = kNumWorkerThreads;
-    }
     if (is_socket_present_) {
-        num_worker_threads = 1;
+        options.num_worker_threads = 1;
     }
 
     if (android::base::EndsWith(misc_name, "-init") || is_socket_present_ ||
@@ -376,8 +375,7 @@ std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(
     auto opener = block_server_factory_->CreateOpener(misc_name);
 
     return handlers_->AddHandler(misc_name, cow_device_path, backing_device, base_path_merge,
-                                 opener, num_worker_threads.value(), io_uring_enabled_, o_direct,
-                                 cow_op_merge_size, verify_block_size, num_verification_threads);
+                                 opener, options);
 }
 
 bool UserSnapshotServer::WaitForSocket() {
