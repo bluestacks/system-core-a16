@@ -24,15 +24,11 @@
 
 #include <condition_variable>
 #include <cstring>
-#include <future>
 #include <iostream>
-#include <limits>
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <thread>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <android-base/file.h>

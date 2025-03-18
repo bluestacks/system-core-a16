@@ -24,9 +24,8 @@
 #include <unistd.h>
 
 #include <chrono>
-#include <iostream>
+#include <future>
 #include <memory>
-#include <string_view>
 
 #include <android-base/file.h>
 #include <android-base/properties.h>
@@ -44,7 +43,6 @@
 #include "snapuserd_core.h"
 #include "testing/dm_user_harness.h"
 #include "testing/host_harness.h"
-#include "testing/temp_device.h"
 #include "utility.h"
 
 namespace android {

@@ -22,6 +22,8 @@
 #include <android-base/strings.h>
 #include <snapuserd/dm_user_block_server.h>
 
+#include <future>
+
 #include "merge_worker.h"
 #include "read_worker.h"
 #include "utility.h"

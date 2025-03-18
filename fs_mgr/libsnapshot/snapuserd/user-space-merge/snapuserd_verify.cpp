@@ -20,7 +20,8 @@
 #include <android-base/scopeguard.h>
 #include <android-base/strings.h>
 
-#include "android-base/properties.h"
+#include <future>
+
 #include "snapuserd_core.h"
 #include "utility.h"
 
