@@ -2234,6 +2234,11 @@ bool SnapshotManager::UpdateUsesODirect(LockedFile* lock) {
     return update_status.o_direct();
 }
 
+bool SnapshotManager::UpdateUsesSkipVerification(LockedFile* lock) {
+    SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
+    return update_status.skip_verification();
+}
+
 uint32_t SnapshotManager::GetUpdateCowOpMergeSize(LockedFile* lock) {
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
     return update_status.cow_op_merge_size();
@@ -3244,6 +3249,7 @@ bool SnapshotManager::WriteUpdateState(LockedFile* lock, UpdateState state,
         status.set_io_uring_enabled(old_status.io_uring_enabled());
         status.set_legacy_snapuserd(old_status.legacy_snapuserd());
         status.set_o_direct(old_status.o_direct());
+        status.set_skip_verification(old_status.skip_verification());
         status.set_cow_op_merge_size(old_status.cow_op_merge_size());
         status.set_num_worker_threads(old_status.num_worker_threads());
         status.set_verify_block_size(old_status.verify_block_size());
@@ -3625,6 +3631,10 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
         if (GetODirectEnabledProperty()) {
             status.set_o_direct(true);
             LOG(INFO) << "o_direct for source image enabled";
+        }
+        if (GetSkipVerificationProperty()) {
+            status.set_skip_verification(true);
+            LOG(INFO) << "skipping verification of images";
         }
         if (is_legacy_snapuserd) {
             status.set_legacy_snapuserd(true);
@@ -4073,6 +4083,7 @@ bool SnapshotManager::Dump(std::ostream& os) {
     ss << "Using userspace snapshots: " << update_status.userspace_snapshots() << std::endl;
     ss << "Using io_uring: " << update_status.io_uring_enabled() << std::endl;
     ss << "Using o_direct: " << update_status.o_direct() << std::endl;
+    ss << "Using skip_verification: " << update_status.skip_verification() << std::endl;
     ss << "Cow op merge size (0 for uncapped): " << update_status.cow_op_merge_size() << std::endl;
     ss << "Worker thread count: " << update_status.num_worker_threads() << std::endl;
     ss << "Num verification threads: " << update_status.num_verification_threads() << std::endl;

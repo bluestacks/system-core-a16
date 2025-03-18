@@ -31,6 +31,7 @@ struct HandlerOptions {
     int num_worker_threads{};
     bool use_iouring{};
     bool o_direct{};
+    bool skip_verification{};
     uint32_t cow_op_merge_size{};
     uint32_t verify_block_size{};
     uint32_t num_verification_threads{};

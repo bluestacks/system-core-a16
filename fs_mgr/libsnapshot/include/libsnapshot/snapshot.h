@@ -859,6 +859,9 @@ class SnapshotManager final : public ISnapshotManager {
     // Check if direct reads are enabled for the source image
     bool UpdateUsesODirect(LockedFile* lock);
 
+    // Check if we skip the verification of the target image
+    bool UpdateUsesSkipVerification(LockedFile* lock);
+
     // Get value of maximum cow op merge size
     uint32_t GetUpdateCowOpMergeSize(LockedFile* lock);
 

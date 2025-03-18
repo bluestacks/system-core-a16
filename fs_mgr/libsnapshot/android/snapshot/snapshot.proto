@@ -233,6 +233,9 @@ message SnapshotUpdateStatus {
 
     // Default value is 3, configures threads to do verification phase
     uint32 num_verification_threads = 16;
+
+    // Skips verification of partitions
+    bool skip_verification = 17;
 }
 
 message SnapshotMergeReport {
