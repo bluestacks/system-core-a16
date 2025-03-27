@@ -340,8 +340,6 @@ class MetadataBuilder {
     // Remove all partitions belonging to a group, then remove the group.
     void RemoveGroupAndPartitions(std::string_view group_name);
 
-    // Set the LP_METADATA_AUTO_SLOT_SUFFIXING flag.
-    void SetAutoSlotSuffixing();
     // Set the LP_HEADER_FLAG_VIRTUAL_AB_DEVICE flag.
     void SetVirtualABDeviceFlag();
     // Set or unset the LP_HEADER_FLAG_OVERLAYS_ACTIVE flag.
@@ -418,7 +416,6 @@ class MetadataBuilder {
     std::vector<std::unique_ptr<Partition>> partitions_;
     std::vector<std::unique_ptr<PartitionGroup>> groups_;
     std::vector<LpMetadataBlockDevice> block_devices_;
-    bool auto_slot_suffixing_;
 };
 
 // Read BlockDeviceInfo for a given block device. This always returns false
