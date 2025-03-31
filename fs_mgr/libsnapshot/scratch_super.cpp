@@ -322,8 +322,7 @@ bool IsScratchOtaMetadataOnSuper() {
     auto source_slot = fs_mgr_get_slot_suffix();
     auto source_slot_number = SlotNumberForSlotSuffix(source_slot);
 
-    const auto super_device =
-            kPhysicalDevice + fs_mgr_get_super_partition_name(!source_slot_number);
+    const auto super_device = kPhysicalDevice + fs_mgr_get_super_partition_name();
 
     auto metadata = android::fs_mgr::ReadMetadata(super_device, !source_slot_number);
     if (!metadata) {

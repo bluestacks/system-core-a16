@@ -173,7 +173,7 @@ bool MapSnapshots::PrepareUpdate() {
 
     auto source_slot = fs_mgr_get_slot_suffix();
     auto source_slot_number = SlotNumberForSlotSuffix(source_slot);
-    auto super_source = fs_mgr_get_super_partition_name(source_slot_number);
+    auto super_source = fs_mgr_get_super_partition_name();
 
     // Get current partition information.
     PartitionOpener opener;
@@ -998,7 +998,7 @@ bool CreateTestUpdate(SnapshotManager* sm) {
     auto source_slot_number = SlotNumberForSlotSuffix(source_slot);
     auto target_slot = fs_mgr_get_other_slot_suffix();
     auto target_slot_number = SlotNumberForSlotSuffix(target_slot);
-    auto super_source = fs_mgr_get_super_partition_name(source_slot_number);
+    auto super_source = fs_mgr_get_super_partition_name();
 
     // Get current partition information.
     PartitionOpener opener;
@@ -1030,7 +1030,7 @@ bool CreateTestUpdate(SnapshotManager* sm) {
     // Write the "new" system partition.
     auto system_target_name = "system" + target_slot;
     CreateLogicalPartitionParams clpp = {
-            .block_device = fs_mgr_get_super_partition_name(target_slot_number),
+            .block_device = fs_mgr_get_super_partition_name(),
             .metadata_slot = {target_slot_number},
             .partition_name = system_target_name,
             .timeout_ms = 10s,
