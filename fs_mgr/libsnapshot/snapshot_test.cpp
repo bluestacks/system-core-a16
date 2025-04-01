@@ -80,7 +80,6 @@ using android::fs_mgr::BlockDeviceInfo;
 using android::fs_mgr::CreateLogicalPartitionParams;
 using android::fs_mgr::DestroyLogicalPartition;
 using android::fs_mgr::EnsurePathMounted;
-using android::fs_mgr::EnsurePathUnmounted;
 using android::fs_mgr::Extent;
 using android::fs_mgr::Fstab;
 using android::fs_mgr::GetPartitionGroupName;
@@ -2131,23 +2130,6 @@ TEST_F(MetadataMountedTest, Android) {
 
     EXPECT_TRUE(IsMetadataMounted());
     EXPECT_TRUE(sm->CancelUpdate()) << "Metadata dir should never be unmounted in Android mode";
-}
-
-TEST_F(MetadataMountedTest, Recovery) {
-    GTEST_SKIP() << "b/350715463";
-
-    test_device->set_recovery(true);
-    metadata_dir_ = test_device->GetMetadataDir();
-
-    EXPECT_TRUE(android::fs_mgr::EnsurePathUnmounted(&fstab_, metadata_dir_));
-    EXPECT_FALSE(IsMetadataMounted());
-
-    auto device = sm->EnsureMetadataMounted();
-    EXPECT_NE(nullptr, device);
-    EXPECT_TRUE(IsMetadataMounted());
-
-    device.reset();
-    EXPECT_FALSE(IsMetadataMounted());
 }
 
 // Test that during a merge, we can wipe data in recovery.
