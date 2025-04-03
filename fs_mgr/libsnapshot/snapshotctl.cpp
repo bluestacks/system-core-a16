@@ -281,6 +281,8 @@ bool MapSnapshots::GetCowDevicePath(std::string partition_name, std::string* cow
 }
 
 bool MapSnapshots::ApplyUpdate() {
+    auto scope_guard = android::base::make_scope_guard([]() { UmountScratch(false); });
+
     if (!PrepareUpdate()) {
         LOG(ERROR) << "PrepareUpdate failed";
         return false;
