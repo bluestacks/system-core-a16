@@ -35,6 +35,15 @@ log_message() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$log_file" # Append to log file with timestamp
 }
 
+# Wrap fastboot to pick up the preferred serial from environment. adb already honors $ANDROID_SERIAL.
+fastboot() {
+  if [ -z "$FASTBOOT_SERIAL" ]; then
+    command fastboot "$@"
+  else
+    command fastboot -s "$FASTBOOT_SERIAL" "$@"
+  fi
+}
+
 # Function to check for create_snapshot and build if needed
 ensure_create_snapshot() {
   if ! command -v create_snapshot &> /dev/null; then
