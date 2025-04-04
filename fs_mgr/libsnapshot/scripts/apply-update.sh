@@ -163,8 +163,8 @@ fi
 
 rm -rf $HOST_PATH
 
-adb root
 adb wait-for-device
+adb root
 
 adb shell rm -rf $DEVICE_PATH
 adb shell mkdir -p $DEVICE_PATH
