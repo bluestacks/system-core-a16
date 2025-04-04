@@ -30,9 +30,9 @@ log_file="$HOST_PATH/snapshot.log"
 
 # Function to log messages to both console and log file
 log_message() {
-    message="$1"
-    echo "$message"  # Print to stdout
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$log_file"  # Append to log file with timestamp
+  message="$1"
+  echo "$message"                                               # Print to stdout
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$log_file" # Append to log file with timestamp
 }
 
 # Function to check for create_snapshot and build if needed
@@ -65,8 +65,8 @@ flash_static_partitions() {
   fastboot flashall --exclude-dynamic-partitions --disable-super-optimization --skip-reboot
 
   if (( wipe_flag )); then
-      log_message "Wiping device..."
-      fastboot -w
+    log_message "Wiping device..."
+    fastboot -w
   fi
   fastboot reboot
 }
@@ -156,7 +156,7 @@ for arg in "$@"; do
 done
 
 # Check if help flag is set
-if (( help_flag )); then
+if ((help_flag)); then
   show_help
   exit 0
 fi
@@ -214,22 +214,22 @@ adb push -q $HOST_PATH/*.patch $DEVICE_PATH
 
 log_message "Applying update"
 
-if (( boot_snapshot)); then
+if ((boot_snapshot)); then
   adb shell snapshotctl map-snapshots $DEVICE_PATH
-elif (( wipe_flag )); then
+elif ((wipe_flag)); then
   adb shell snapshotctl apply-update $DEVICE_PATH -w
 else
   adb shell snapshotctl apply-update $DEVICE_PATH
 fi
 
 if (( skip_static_partitions )); then
-    log_message "Rebooting device - Skipping flashing static partitions"
-    adb reboot
+  log_message "Rebooting device - Skipping flashing static partitions"
+  adb reboot
 else
-    log_message "Rebooting device to bootloader"
-    adb reboot bootloader
-    log_message "Waiting to enter fastboot bootloader"
-    flash_static_partitions "$wipe_flag" "$flash_bootloader"
+  log_message "Rebooting device to bootloader"
+  adb reboot bootloader
+  log_message "Waiting to enter fastboot bootloader"
+  flash_static_partitions "$wipe_flag" "$flash_bootloader"
 fi
 
 log_message "Update completed"
