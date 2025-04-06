@@ -35,6 +35,15 @@ log_message() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$log_file" # Append to log file with timestamp
 }
 
+# Wrap fastboot to pick up the preferred serial from environment. adb already honors $ANDROID_SERIAL.
+fastboot() {
+  if [ -z "$FASTBOOT_SERIAL" ]; then
+    command fastboot "$@"
+  else
+    command fastboot -s "$FASTBOOT_SERIAL" "$@"
+  fi
+}
+
 # Function to check for create_snapshot and build if needed
 ensure_create_snapshot() {
   if ! command -v create_snapshot &> /dev/null; then
@@ -127,6 +136,7 @@ EOF
 skip_static_partitions=0
 boot_snapshot=0
 flash_bootloader=1
+userspace_fastboot=0
 wipe_flag=0
 help_flag=0
 
@@ -145,6 +155,9 @@ for arg in "$@"; do
     --boot_snapshot)
       boot_snapshot=1
       ;;
+    --userspace_fastboot)
+      userspace_fastboot=1
+      ;;
     --help)
       help_flag=1
       ;;
@@ -159,6 +172,11 @@ done
 if ((help_flag)); then
   show_help
   exit 0
+fi
+
+if (( flash_bootloader && userspace_fastboot )); then
+  echo "Bootloader cannot be flashed with userspace fastboot"
+  exit 1
 fi
 
 rm -rf $HOST_PATH
@@ -227,7 +245,11 @@ if (( skip_static_partitions )); then
   adb reboot
 else
   log_message "Rebooting device to bootloader"
-  adb reboot bootloader
+  if (( userspace_fastboot )); then
+    adb reboot fastboot
+  else
+    adb reboot bootloader
+  fi
   log_message "Waiting to enter fastboot bootloader"
   flash_static_partitions "$wipe_flag" "$flash_bootloader"
 fi
