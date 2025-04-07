@@ -284,7 +284,8 @@ static void DumpUmountDebuggingInfo() {
 /** Attempts to unmount partitions
  *
  * @param force If true, forces the unmount operation, even if the filesystem is busy.
- * @return UMOUNT_STAT_SUCCESS: if all partitions were unmounted successfully.
+ * @return UMOUNT_STAT_SUCCESS: if all partitions were unmounted successfully, or if no partitions
+ *         were found to unmount after umounting.
  *         UMOUNT_STAT_NOT_AVAILABLE: failed to read umount stats from /proc/mounts.
  *         UMOUNT_STAT_ERROR: failed to umount all partitions.
  */
@@ -319,6 +320,21 @@ static UmountStat TryUmountPartitions(bool force) {
     }
 
     if (unmount_success) {
+        return UMOUNT_STAT_SUCCESS;
+    }
+
+    // Some identical mount points may be umounted twice during unmounting, which can cause an
+    // INVALID_ARGUMENT error at second umount. However, they were actually unmounted
+    // successfully. Update the list of partitions that need to be umounted after the first
+    // attempt. If there are no partitions left to umount, we should consider the umount
+    // successful.
+    block_devices.clear();
+    emulated_devices.clear();
+    if (!FindPartitionsToUmount(&block_devices, &emulated_devices)) {
+        return UMOUNT_STAT_NOT_AVAILABLE;
+    }
+
+    if (block_devices.empty() && emulated_devices.empty()) {
         return UMOUNT_STAT_SUCCESS;
     }
 
