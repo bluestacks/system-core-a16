@@ -1002,11 +1002,7 @@ on post-fs-data
     wait_for_prop keystore.module_hash.sent true
     perform_apex_config
 
-    exec_start system_aconfigd_mainline_init
     start system_aconfigd_socket_service
-
-    # start mainline aconfigd init, after transition, the above system_aconfigd_mainline_init
-    # will be deprecated
     exec_start mainline_aconfigd_init
     start mainline_aconfigd_socket_service
 
