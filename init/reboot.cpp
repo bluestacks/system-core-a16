@@ -445,14 +445,16 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
     if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices, false)) {
         return UMOUNT_STAT_ERROR;
     }
-    auto sm = snapshot::SnapshotManager::New();
     bool ota_update_in_progress = false;
-    if (sm->IsUserspaceSnapshotUpdateInProgress(dynamic_partitions)) {
-        LOG(INFO) << "OTA update in progress. Pause snapshot merge";
-        if (!sm->PauseSnapshotMerge()) {
-            LOG(ERROR) << "Snapshot-merge pause failed";
+    if (!IsMicrodroid()) {
+        auto sm = snapshot::SnapshotManager::New();
+        if (sm->IsUserspaceSnapshotUpdateInProgress(dynamic_partitions)) {
+            LOG(INFO) << "OTA update in progress. Pause snapshot merge";
+            if (!sm->PauseSnapshotMerge()) {
+                LOG(ERROR) << "Snapshot-merge pause failed";
+            }
+            ota_update_in_progress = true;
         }
-        ota_update_in_progress = true;
     }
     UmountStat stat = UmountPartitions(timeout - t.duration());
     if (stat != UMOUNT_STAT_SUCCESS) {

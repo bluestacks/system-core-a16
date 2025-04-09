@@ -377,7 +377,7 @@ bool FirstStageMountVBootV2::CreateLogicalPartitions() {
         return false;
     }
 
-    if (SnapshotManager::IsSnapshotManagerNeeded()) {
+    if (!IsMicrodroid() && SnapshotManager::IsSnapshotManagerNeeded()) {
         auto init_devices = [this](const std::string& device) -> bool {
             if (android::base::StartsWith(device, "/dev/block/dm-")) {
                 return block_dev_init_.InitDmDevice(device);
