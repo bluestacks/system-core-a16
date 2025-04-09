@@ -127,8 +127,8 @@ struct PendingControlMessage {
     pid_t pid;
     int fd;
 };
-static std::mutex pending_control_messages_lock;
-static std::queue<PendingControlMessage> pending_control_messages;
+[[clang::no_destroy]] static std::mutex pending_control_messages_lock;
+[[clang::no_destroy]] static std::queue<PendingControlMessage> pending_control_messages;
 
 // Init epolls various FDs to wait for various inputs.  It previously waited on property changes
 // with a blocking socket that contained the information related to the change, however, it was easy
@@ -235,7 +235,7 @@ void ResetWaitForProp() {
     prop_waiter_state.ResetWaitForProp();
 }
 
-static class ShutdownState {
+[[clang::no_destroy]] static class ShutdownState {
   public:
     void TriggerShutdown(const std::string& command) {
         // We can't call HandlePowerctlMessage() directly in this function,
@@ -506,6 +506,7 @@ using ControlMessageFunction = std::function<Result<void>(Service*)>;
 
 static const std::map<std::string, ControlMessageFunction, std::less<>>& GetControlMessageMap() {
     // clang-format off
+    [[clang::no_destroy]]
     static const std::map<std::string, ControlMessageFunction, std::less<>> control_message_functions = {
         {"sigstop_on",        [](auto* service) { service->set_sigstop(true); return Result<void>{}; }},
         {"sigstop_off",       [](auto* service) { service->set_sigstop(false); return Result<void>{}; }},

@@ -115,12 +115,12 @@ static bool persistent_properties_loaded = false;
 static int from_init_socket = -1;
 static int init_socket = -1;
 static bool accept_messages = false;
-static std::mutex accept_messages_lock;
-static std::mutex selinux_check_access_lock;
-static std::thread property_service_thread;
-static std::thread property_service_for_system_thread;
+[[clang::no_destroy]] static std::mutex accept_messages_lock;
+[[clang::no_destroy]] static std::mutex selinux_check_access_lock;
+[[clang::no_destroy]] static std::thread property_service_thread;
+[[clang::no_destroy]] static std::thread property_service_for_system_thread;
 
-static PropertyInfoAreaFile property_info_area;
+[[clang::no_destroy]] static PropertyInfoAreaFile property_info_area;
 
 struct PropertyAuditData {
     const ucred* cr;
@@ -380,7 +380,7 @@ class PersistWriteThread {
     std::deque<std::tuple<std::string, std::string, SocketConnection>> work_;
 };
 
-static std::unique_ptr<PersistWriteThread> persist_write_thread;
+[[clang::no_destroy]] static std::unique_ptr<PersistWriteThread> persist_write_thread;
 
 static std::optional<uint32_t> PropertySet(const std::string& name, const std::string& value,
                                            SocketConnection* socket, std::string* error) {
@@ -574,7 +574,7 @@ std::optional<uint32_t> HandlePropertySet(const std::string& name, const std::st
     // We use a thread to do this restorecon operation to prevent holding up init, as it may take
     // a long time to complete.
     if (name == kRestoreconProperty && cr.pid != 1 && !value.empty()) {
-        static AsyncRestorecon async_restorecon;
+        [[clang::no_destroy]] static AsyncRestorecon async_restorecon;
         async_restorecon.TriggerRestorecon(value);
         return {PROP_SUCCESS};
     }
