@@ -488,12 +488,19 @@ void BatteryMonitor::updateValues(void) {
                               mChargerNames[i].c_str());
             int ChargingCurrent = (access(path.c_str(), R_OK) == 0) ? getIntField(path) : 0;
 
+            int ChargingVoltage;
             path.clear();
             path.appendFormat("%s/%s/voltage_max", POWER_SUPPLY_SYSFS_PATH,
                               mChargerNames[i].c_str());
-
-            int ChargingVoltage =
-                    (access(path.c_str(), R_OK) == 0) ? getIntField(path) : DEFAULT_VBUS_VOLTAGE;
+            if (access(path.c_str(), R_OK) == 0) {
+                ChargingVoltage = getIntField(path);
+            } else {
+                path.clear();
+                path.appendFormat("%s/%s/voltage_max_design", POWER_SUPPLY_SYSFS_PATH,
+                                  mChargerNames[i].c_str());
+                ChargingVoltage = (access(path.c_str(), R_OK) == 0) ? getIntField(path)
+                                                                    : DEFAULT_VBUS_VOLTAGE;
+            }
 
             double power = ((double)ChargingCurrent / MILLION) *
                            ((double)ChargingVoltage / MILLION);
