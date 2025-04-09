@@ -101,3 +101,8 @@ getgid32: 1
 getegid32: 1
 getgroups32: 1
 #endif
+
+// MTE specific syscalls
+#if defined(__aarch64__)
+readlinkat: 1
+#endif

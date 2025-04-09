@@ -1841,6 +1841,43 @@ TEST_F(CrasherTest, seccomp_backtrace_no_allocation) {
   ASSERT_BACKTRACE_FRAME(result, "bar");
 }
 
+TEST_F(CrasherTest, seccomp_mte) {
+#if defined(__aarch64__)
+  if (!mte_supported() || !mte_enabled()) {
+    GTEST_SKIP() << "Requires MTE";
+  }
+
+  LogcatCollector logcat_collector;
+
+  size_t allocation_size = 1;
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess(
+      [&]() {
+        SetTagCheckingLevelSync();
+        volatile int* p = (volatile int*)malloc(allocation_size);
+        free((void*)p);
+        p[0] = 42;
+      },
+      &seccomp_fork);
+
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGSEGV);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  // The fallback path does not support getting MTE error data, so simply check
+  // that we get the correct type of crash.
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result, R"(signal 11 \(SIGSEGV\), code 9 \(SEGV_MTESERR)");
+#else
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+}
+
 TEST_F(CrasherTest, competing_tracer) {
   int intercept_result;
   unique_fd output_fd;

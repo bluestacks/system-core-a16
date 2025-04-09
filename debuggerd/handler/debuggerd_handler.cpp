@@ -39,6 +39,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <android-base/file.h>
 #include <android-base/macros.h>
 #include <android-base/parsebool.h>
 #include <android-base/parseint.h>
@@ -108,7 +109,7 @@ static bool is_permissive_mte() {
   char process_sysprop_name[512];
   async_safe_format_buffer(process_sysprop_name, sizeof(process_sysprop_name),
                            "persist.device_config.memory_safety_native.permissive.process.%s",
-                           getprogname());
+                           android::base::Basename(android::base::GetExecutablePath()).c_str());
   // DO NOT REPLACE this with GetBoolProperty. That uses std::string which allocates, so it is
   // not async-safe, and this function gets used in a signal handler.
   return property_parse_bool("persist.sys.mte.permissive") ||
