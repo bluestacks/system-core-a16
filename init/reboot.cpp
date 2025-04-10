@@ -231,7 +231,7 @@ static std::string GetDataFsType() {
 // Find all read+write block devices and emulated devices in /proc/mounts and add them to
 // the correpsponding list.
 static bool FindPartitionsToUmount(std::vector<MountEntry>* block_dev_partitions,
-                                   std::vector<MountEntry>* emulated_partitions, bool dump) {
+                                   std::vector<MountEntry>* emulated_partitions) {
     std::unique_ptr<std::FILE, int (*)(std::FILE*)> fp(setmntent("/proc/mounts", "re"), endmntent);
     if (fp == nullptr) {
         PLOG(ERROR) << "Failed to open /proc/mounts";
@@ -239,10 +239,7 @@ static bool FindPartitionsToUmount(std::vector<MountEntry>* block_dev_partitions
     }
     mntent* mentry;
     while ((mentry = getmntent(fp.get())) != nullptr) {
-        if (dump) {
-            LOG(INFO) << "mount entry " << mentry->mnt_fsname << ":" << mentry->mnt_dir << " opts "
-                      << mentry->mnt_opts << " type " << mentry->mnt_type;
-        } else if (MountEntry::IsBlockDevice(*mentry) && hasmntopt(mentry, "rw")) {
+        if (MountEntry::IsBlockDevice(*mentry) && hasmntopt(mentry, "rw")) {
             std::string mount_dir(mentry->mnt_dir);
             // These are R/O partitions changed to R/W after adb remount.
             // Do not umount them as shutdown critical services may rely on them.
@@ -257,6 +254,20 @@ static bool FindPartitionsToUmount(std::vector<MountEntry>* block_dev_partitions
     return true;
 }
 
+static void DumpPartitions() {
+    std::unique_ptr<std::FILE, int (*)(std::FILE*)> fp(setmntent("/proc/mounts", "re"), endmntent);
+    if (fp == nullptr) {
+        PLOG(ERROR) << "Failed to open /proc/mounts";
+        return;
+    }
+
+    mntent* mentry;
+    while ((mentry = getmntent(fp.get())) != nullptr) {
+        LOG(INFO) << "mount entry " << mentry->mnt_fsname << ":" << mentry->mnt_dir << " opts "
+                  << mentry->mnt_opts << " type " << mentry->mnt_type;
+    }
+}
+
 static void DumpUmountDebuggingInfo() {
     int status;
     if (!security_getenforce()) {
@@ -265,7 +276,7 @@ static void DumpUmountDebuggingInfo() {
         logwrap_fork_execvp(arraysize(lsof_argv), lsof_argv, &status, false, LOG_KLOG, true,
                             nullptr);
     }
-    FindPartitionsToUmount(nullptr, nullptr, true);
+    DumpPartitions();
     // dump current CPU stack traces and uninterruptible tasks
     WriteStringToFile("l", PROC_SYSRQ);
     WriteStringToFile("w", PROC_SYSRQ);
@@ -293,7 +304,7 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
     while (true) {
         std::vector<MountEntry> block_devices;
         std::vector<MountEntry> emulated_devices;
-        if (!FindPartitionsToUmount(&block_devices, &emulated_devices, false)) {
+        if (!FindPartitionsToUmount(&block_devices, &emulated_devices)) {
             return UMOUNT_STAT_ERROR;
         }
         if (block_devices.size() == 0) {
@@ -445,7 +456,7 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
     std::vector<MountEntry> emulated_devices;
     std::vector<std::string> dynamic_partitions;
 
-    if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices, false)) {
+    if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices)) {
         return UMOUNT_STAT_ERROR;
     }
     bool ota_update_in_progress = false;
