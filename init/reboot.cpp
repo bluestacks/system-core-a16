@@ -112,8 +112,7 @@ enum UmountStat {
     UMOUNT_STAT_TIMEOUT = 2,
     /* could not run due to error */
     UMOUNT_STAT_ERROR = 3,
-    /* not used by init but reserved for other part to use this to represent the
-       the state where umount status before reboot is not found / available. */
+    /* umount status before reboot is not found / available. */
     UMOUNT_STAT_NOT_AVAILABLE = 4,
 };
 
@@ -282,6 +281,50 @@ static void DumpUmountDebuggingInfo() {
     WriteStringToFile("w", PROC_SYSRQ);
 }
 
+/** Attempts to unmount partitions
+ *
+ * @param force If true, forces the unmount operation, even if the filesystem is busy.
+ * @return UMOUNT_STAT_SUCCESS: if all partitions were unmounted successfully.
+ *         UMOUNT_STAT_NOT_AVAILABLE: failed to read umount stats from /proc/mounts.
+ *         UMOUNT_STAT_ERROR: failed to umount all partitions.
+ */
+static UmountStat TryUmountPartitions(bool force) {
+    std::vector<MountEntry> block_devices;
+    std::vector<MountEntry> emulated_devices;
+
+    // Find partitions to umount and store the mount entries in block_devices and emulated_devices
+    if (!FindPartitionsToUmount(&block_devices, &emulated_devices)) {
+        return UMOUNT_STAT_NOT_AVAILABLE;
+    }
+
+    // Success if there are no partitions need to umount
+    if (block_devices.empty()) {
+        return UMOUNT_STAT_SUCCESS;
+    }
+
+    bool unmount_success = true;
+    // Umount emulated device since /data partition needs all pending writes to be completed and
+    // all emulated partitions unmounted.
+    if (emulated_devices.size() > 0) {
+        for (auto& entry : emulated_devices) {
+            if (!entry.Umount(false)) unmount_success = false;
+        }
+        if (unmount_success) {
+            sync();
+        }
+    }
+
+    for (auto& entry : block_devices) {
+        if (!entry.Umount(force)) unmount_success = false;
+    }
+
+    if (unmount_success) {
+        return UMOUNT_STAT_SUCCESS;
+    }
+
+    return UMOUNT_STAT_ERROR;
+}
+
 static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
     // Terminate (SIGTERM) the services before unmounting partitions.
     // If the processes block the signal, then partitions will eventually fail
@@ -297,34 +340,20 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
     ReapAnyOutstandingChildren();
 
     Timer t;
-    /* data partition needs all pending writes to be completed and all emulated partitions
-     * umounted.If the current waiting is not good enough, give
-     * up and leave it to e2fsck after reboot to fix it.
+    /* If the current waiting is not good enough, give up and leave it to e2fsck after reboot to
+     * fix it.
      */
     while (true) {
-        std::vector<MountEntry> block_devices;
-        std::vector<MountEntry> emulated_devices;
-        if (!FindPartitionsToUmount(&block_devices, &emulated_devices)) {
+        // force umount operation if timeout is not set
+        UmountStat stat = TryUmountPartitions(/*force=*/timeout == 0ms);
+        if (stat == UMOUNT_STAT_SUCCESS) {
+            return UMOUNT_STAT_SUCCESS;
+        }
+
+        if (stat == UMOUNT_STAT_NOT_AVAILABLE || timeout == 0ms) {
             return UMOUNT_STAT_ERROR;
         }
-        if (block_devices.size() == 0) {
-            return UMOUNT_STAT_SUCCESS;
-        }
-        bool unmount_done = true;
-        if (emulated_devices.size() > 0) {
-            for (auto& entry : emulated_devices) {
-                if (!entry.Umount(false)) unmount_done = false;
-            }
-            if (unmount_done) {
-                sync();
-            }
-        }
-        for (auto& entry : block_devices) {
-            if (!entry.Umount(timeout == 0ms)) unmount_done = false;
-        }
-        if (unmount_done) {
-            return UMOUNT_STAT_SUCCESS;
-        }
+
         if ((timeout < t.duration())) {  // try umount at least once
             return UMOUNT_STAT_TIMEOUT;
         }
