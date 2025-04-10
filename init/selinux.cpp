@@ -576,7 +576,8 @@ void MountMissingSystemPartitions() {
         LOG(ERROR) << "Could not read /proc/mounts";
     }
 
-    static const std::vector<std::string> kPartitionNames = {"system_ext", "product"};
+    [[clang::no_destroy]] static const std::vector<std::string> kPartitionNames = {"system_ext",
+                                                                                   "product"};
 
     android::fs_mgr::Fstab extra_fstab;
     for (const auto& name : kPartitionNames) {

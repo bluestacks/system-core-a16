@@ -240,7 +240,7 @@ bool DeviceHandler::IsBootDevice(const Uevent& uevent) const {
 }
 
 std::string DeviceHandler::GetPartitionNameForDevice(const std::string& query_device) {
-    static const auto partition_map = [] {
+    [[clang::no_destroy]] static const auto partition_map = [] {
         std::vector<std::pair<std::string, std::string>> partition_map;
         auto parser = [&partition_map](const std::string& key, const std::string& value) {
             if (key != "androidboot.partition_map") {
@@ -642,7 +642,8 @@ void DeviceHandler::HandleDevice(const std::string& action, const std::string& d
 
 void DeviceHandler::HandleAshmemUevent(const Uevent& uevent) {
     if (uevent.device_name == "ashmem") {
-        static const std::string boot_id_path = "/proc/sys/kernel/random/boot_id";
+        [[clang::no_destroy]] static const std::string boot_id_path =
+                "/proc/sys/kernel/random/boot_id";
         std::string boot_id;
         if (!ReadFileToString(boot_id_path, &boot_id)) {
             PLOG(ERROR) << "Cannot duplicate ashmem device node. Failed to read " << boot_id_path;
