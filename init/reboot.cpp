@@ -383,7 +383,7 @@ static void KillAllProcesses() {
 
 // Create reboot/shutdwon monitor thread
 void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target,
-                         sem_t* reboot_semaphore, std::chrono::milliseconds shutdown_timeout,
+                         sem_t* reboot_semaphore, std::chrono::milliseconds clean_shutdown_timeout,
                          bool* reboot_monitor_run) {
     unsigned int remaining_shutdown_time = 0;
 
@@ -392,7 +392,7 @@ void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target,
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
-    remaining_shutdown_time = shutdown_watchdog_timeout + shutdown_timeout.count() / 1000;
+    remaining_shutdown_time = shutdown_watchdog_timeout + clean_shutdown_timeout.count() / 1000;
 
     while (*reboot_monitor_run == true) {
         if (TEMP_FAILURE_RETRY(sem_wait(reboot_semaphore)) == -1) {
@@ -719,18 +719,23 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
 
     bool is_thermal_shutdown = cmd == ANDROID_RB_THERMOFF;
 
-    auto shutdown_timeout = 0ms;
+    auto clean_shutdown_timeout = 0ms;
     if (!SHUTDOWN_ZERO_TIMEOUT) {
-        constexpr unsigned int shutdown_timeout_default = 6;
-        constexpr unsigned int max_thermal_shutdown_timeout = 3;
-        auto shutdown_timeout_final = android::base::GetUintProperty("ro.build.shutdown_timeout",
-                                                                     shutdown_timeout_default);
-        if (is_thermal_shutdown && shutdown_timeout_final > max_thermal_shutdown_timeout) {
-            shutdown_timeout_final = max_thermal_shutdown_timeout;
+        constexpr unsigned int clean_shutdown_timeout_default = 6;
+        constexpr unsigned int max_clean_thermal_shutdown_timeout = 3;
+        constexpr unsigned int max_clean_shutdown_timeout = 10;
+        auto shutdown_timeout_final = android::base::GetUintProperty(
+                "ro.build.shutdown_timeout", clean_shutdown_timeout_default);
+        if (is_thermal_shutdown && shutdown_timeout_final > max_clean_thermal_shutdown_timeout) {
+            shutdown_timeout_final = max_clean_thermal_shutdown_timeout;
+        } else if (shutdown_timeout_final > max_clean_shutdown_timeout) {
+            LOG(WARNING) << "Shorten clean shutdown timeout from " << shutdown_timeout_final
+                         << " s to " << max_clean_shutdown_timeout << " s";
+            shutdown_timeout_final = max_clean_shutdown_timeout;
         }
-        shutdown_timeout = std::chrono::seconds(shutdown_timeout_final);
+        clean_shutdown_timeout = std::chrono::seconds(shutdown_timeout_final);
     }
-    LOG(INFO) << "Shutdown timeout: " << shutdown_timeout.count() << " ms";
+    LOG(INFO) << "Clean shutdown timeout: " << clean_shutdown_timeout.count() << " ms";
 
     sem_t reboot_semaphore;
     if (sem_init(&reboot_semaphore, false, 0) == -1) {
@@ -743,7 +748,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     LOG(INFO) << "Create reboot monitor thread.";
     bool reboot_monitor_run = true;
     std::thread reboot_monitor_thread(&RebootMonitorThread, cmd, reboot_target, &reboot_semaphore,
-                                      shutdown_timeout, &reboot_monitor_run);
+                                      clean_shutdown_timeout, &reboot_monitor_run);
     reboot_monitor_thread.detach();
 
     // Start reboot monitor thread
@@ -833,8 +838,8 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
 
     // optional shutdown step
     // 1. terminate all services except shutdown critical ones. wait for delay to finish
-    if (shutdown_timeout > 0ms) {
-        StopServicesAndLogViolations(stop_first, shutdown_timeout / 2, true /* SIGTERM */);
+    if (clean_shutdown_timeout > 0ms) {
+        StopServicesAndLogViolations(stop_first, clean_shutdown_timeout / 2, true /* SIGTERM */);
     }
     // Send SIGKILL to ones that didn't terminate cleanly.
     StopServicesAndLogViolations(stop_first, 0ms, false /* SIGKILL */);
@@ -870,8 +875,8 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     if (auto ret = UnmountAllApexes(); !ret.ok()) {
         LOG(ERROR) << ret.error();
     }
-    UmountStat stat =
-            TryUmountAndFsck(cmd, run_fsck, shutdown_timeout - t.duration(), &reboot_semaphore);
+    UmountStat stat = TryUmountAndFsck(cmd, run_fsck, clean_shutdown_timeout - t.duration(),
+                                       &reboot_semaphore);
     // Follow what linux shutdown is doing: one more sync with little bit delay
     {
         Timer sync_timer;
