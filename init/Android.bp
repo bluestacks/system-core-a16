@@ -18,6 +18,14 @@ package {
     default_applicable_licenses: ["system_core_init_license"],
 }
 
+// LINT.IfChange
+// N.B. keep this in sync with EXPORT_GLOBAL_HWASAN_OPTIONS in system/core/rootdir/Android.bp
+GLOBAL_HWASAN_OPTIONS = select(soong_config_variable("ANDROID", "HWASAN_ENABLED"), {
+    true: ["-DHWASAN_OPTIONS=heap_history_size=1023,stack_history_size=512,export_memory_stats=0,max_malloc_fill_size=131072,malloc_fill_byte=0"],
+    default: [],
+})
+// LINT.ThenChange(/rootdir/Android.bp)
+
 // Added automatically by a large-scale-change
 // See: http://go/android-license-faq
 license {
@@ -418,7 +426,7 @@ init_first_stage_cc_defaults {
         "-DSHUTDOWN_ZERO_TIMEOUT=0",
         "-DLOG_UEVENTS=0",
         "-DSEPOLICY_VERSION=30", // TODO(jiyong): externalize the version number
-    ],
+    ] + GLOBAL_HWASAN_OPTIONS,
 
     product_variables: {
         debuggable: {
