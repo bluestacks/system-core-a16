@@ -386,11 +386,42 @@ void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
+    constexpr unsigned int shutdown_watchdog_timeout_min = 60;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
 
+    if (shutdown_watchdog_timeout < shutdown_watchdog_timeout_min) {
+        LOG(WARNING) << "ro.build.shutdown.watchdog.timeout = " << shutdown_watchdog_timeout
+                     << " is too small; bumping up to " << shutdown_watchdog_timeout_min;
+        shutdown_watchdog_timeout = shutdown_watchdog_timeout_min;
+    }
+
     LOG(INFO) << "RebootMonitorThread started for " << shutdown_watchdog_timeout << "s";
-    std::this_thread::sleep_for(std::chrono::seconds(shutdown_watchdog_timeout));
+    std::chrono::duration timeout = std::chrono::seconds(shutdown_watchdog_timeout);
+
+    constexpr unsigned int num_steps = 10;
+    std::chrono::duration sleep_amount =
+            std::chrono::duration_cast<std::chrono::milliseconds>(timeout) / num_steps;
+
+    for (unsigned int i = 0; i < num_steps - 1; i++) {
+        std::this_thread::sleep_for(sleep_amount);
+
+        // Print a message periodically as we're waiting so there is some
+        // warning in the logs if we're getting close to triggering. Use this
+        // as a chance to try to preserve data by using the "sync" and
+        // "force remount readonly" sysrq requests, both of which kick off
+        // background work and are non-blocking. We'll do "sync" most of the
+        // time and only do the more intrusive remount right before the last
+        // delay (to give it time to take effect).
+        LOG(WARNING) << "Reboot monitor still running, forced reboot in "
+                     << ((num_steps - i - 1) * sleep_amount.count()) << " ms";
+        if (i == num_steps - 2) {
+            WriteStringToFile("u", PROC_SYSRQ);
+        } else {
+            WriteStringToFile("s", PROC_SYSRQ);
+        }
+    }
+    std::this_thread::sleep_for(sleep_amount);
 
     LOG(ERROR) << "Reboot thread timed out";
 
@@ -413,12 +444,7 @@ void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target) {
         WriteStringToFile("w", PROC_SYSRQ);
     }
 
-    // In shutdown case,notify kernel to sync and umount fs to read-only before shutdown.
     if (cmd == ANDROID_RB_POWEROFF || cmd == ANDROID_RB_THERMOFF) {
-        WriteStringToFile("s", PROC_SYSRQ);
-
-        WriteStringToFile("u", PROC_SYSRQ);
-
         RebootSystem(cmd, reboot_target);
     }
 
