@@ -75,6 +75,7 @@ class CreateSnapshot {
      */
     std::string parsing_file_;
     bool create_snapshot_patch_ = false;
+    bool incremental_ = true;
 
     const int kNumThreads = 6;
     const size_t kBlockSizeToRead = 1_MiB;
@@ -103,6 +104,7 @@ class CreateSnapshot {
     bool ReadBlocks(off_t offset, const int skip_blocks, const uint64_t dev_sz);
     std::string ToHexString(const uint8_t* buf, size_t len);
 
+    bool CreateSnapshotFullOta();
     bool CreateSnapshotFile();
     bool FindSourceBlockHash();
     bool PrepareParse(std::string& parsing_file, const bool createSnapshot);
@@ -143,6 +145,10 @@ CreateSnapshot::CreateSnapshot(const std::string& src_file, const std::string& t
       use_merkel_tree_(merkel_tree) {
     if (!compression.empty()) {
         compression_ = compression;
+    }
+
+    if (src_file_.empty()) {
+        incremental_ = false;
     }
 }
 
@@ -259,10 +265,21 @@ bool CreateSnapshot::CreateSnapshotFile() {
     return ParsePartition();
 }
 
+bool CreateSnapshot::CreateSnapshotFullOta() {
+    if (!PrepareParse(target_file_, true)) {
+        return false;
+    }
+    return ParsePartition();
+}
+
 /*
  * Creates snapshot patch file by comparing source.img and target.img
  */
 bool CreateSnapshot::CreateSnapshotPatch() {
+    if (!incremental_) {
+        return CreateSnapshotFullOta();
+    }
+
     if (!FindSourceBlockHash()) {
         return false;
     }
@@ -289,22 +306,24 @@ std::string CreateSnapshot::ToHexString(const uint8_t* buf, size_t len) {
 
 void CreateSnapshot::PrepareMergeBlock(const void* buffer, uint64_t block,
                                        std::string& block_hash) {
-    if (std::memcmp(zblock_.get(), buffer, BLOCK_SZ) == 0) {
-        std::lock_guard<std::mutex> lock(write_lock_);
-        zero_blocks_.push_back(block);
-        return;
-    }
-
-    auto iter = source_block_hash_.find(block_hash);
-    if (iter != source_block_hash_.end()) {
-        std::lock_guard<std::mutex> lock(write_lock_);
-        // In-place copy is skipped
-        if (block != iter->second) {
-            copy_blocks_[block] = iter->second;
-        } else {
-            in_place_ops_ += 1;
+    if (incremental_) {
+        if (std::memcmp(zblock_.get(), buffer, BLOCK_SZ) == 0) {
+            std::lock_guard<std::mutex> lock(write_lock_);
+            zero_blocks_.push_back(block);
+            return;
         }
-        return;
+
+        auto iter = source_block_hash_.find(block_hash);
+        if (iter != source_block_hash_.end()) {
+            std::lock_guard<std::mutex> lock(write_lock_);
+            // In-place copy is skipped
+            if (block != iter->second) {
+                copy_blocks_[block] = iter->second;
+            } else {
+                in_place_ops_ += 1;
+            }
+            return;
+        }
     }
     std::lock_guard<std::mutex> lock(write_lock_);
     replace_blocks_.push_back(block);
@@ -615,10 +634,10 @@ bool CreateSnapshot::ParsePartition() {
 
 constexpr char kUsage[] = R"(
 NAME
-    create_snapshot - Create snapshot patches by comparing two partition images
+    create_snapshot - Create snapshot patches
 
 SYNOPSIS
-    create_snapshot --source=<source.img> --target=<target.img> --compression="<compression-algorithm"
+    $create_snapshot --source=<source.img> --target=<target.img> --compression="<compression-algorithm"
 
     source.img -> Source partition image
     target.img -> Target partition image
@@ -639,7 +658,12 @@ int main(int argc, char* argv[]) {
     ::gflags::SetUsageMessage(kUsage);
     ::gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-    if (FLAGS_source.empty() || FLAGS_target.empty()) {
+    if (FLAGS_target.empty()) {
+        LOG(INFO) << kUsage;
+        return 0;
+    }
+
+    if (FLAGS_target.empty() && !FLAGS_source.empty()) {
         LOG(INFO) << kUsage;
         return 0;
     }

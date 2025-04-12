@@ -66,11 +66,11 @@ static std::string GetMountNamespaceId() {
     return ret;
 }
 
-static android::base::unique_fd bootstrap_ns_fd;
-static android::base::unique_fd default_ns_fd;
+[[clang::no_destroy]] static android::base::unique_fd bootstrap_ns_fd;
+[[clang::no_destroy]] static android::base::unique_fd default_ns_fd;
 
-static std::string bootstrap_ns_id;
-static std::string default_ns_id;
+[[clang::no_destroy]] static std::string bootstrap_ns_id;
+[[clang::no_destroy]] static std::string default_ns_id;
 
 }  // namespace
 

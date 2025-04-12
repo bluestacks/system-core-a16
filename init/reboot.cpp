@@ -210,19 +210,22 @@ static void LogShutdownTime(UmountStat stat, Timer* t) {
                  << stat;
 }
 
-static bool IsDataMounted(const std::string& fstype) {
+// Gets the filesystem type of the /data partition.
+// Returns the filesystem type as a string (e.g., "ext4", "f2fs") or an empty string if not found
+// or if an error occurs.
+static std::string GetDataFsType() {
     std::unique_ptr<std::FILE, int (*)(std::FILE*)> fp(setmntent("/proc/mounts", "re"), endmntent);
     if (fp == nullptr) {
         PLOG(ERROR) << "Failed to open /proc/mounts";
-        return false;
+        return "";
     }
     mntent* mentry;
     while ((mentry = getmntent(fp.get())) != nullptr) {
         if (mentry->mnt_dir == "/data"s) {
-            return fstype == "*" || mentry->mnt_type == fstype;
+            return mentry->mnt_type;
         }
     }
-    return false;
+    return "";
 }
 
 // Find all read+write block devices and emulated devices in /proc/mounts and add them to
@@ -445,14 +448,16 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
     if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices, false)) {
         return UMOUNT_STAT_ERROR;
     }
-    auto sm = snapshot::SnapshotManager::New();
     bool ota_update_in_progress = false;
-    if (sm->IsUserspaceSnapshotUpdateInProgress(dynamic_partitions)) {
-        LOG(INFO) << "OTA update in progress. Pause snapshot merge";
-        if (!sm->PauseSnapshotMerge()) {
-            LOG(ERROR) << "Snapshot-merge pause failed";
+    if (!IsMicrodroid()) {
+        auto sm = snapshot::SnapshotManager::New();
+        if (sm->IsUserspaceSnapshotUpdateInProgress(dynamic_partitions)) {
+            LOG(INFO) << "OTA update in progress. Pause snapshot merge";
+            if (!sm->PauseSnapshotMerge()) {
+                LOG(ERROR) << "Snapshot-merge pause failed";
+            }
+            ota_update_in_progress = true;
         }
-        ota_update_in_progress = true;
     }
     UmountStat stat = UmountPartitions(timeout - t.duration());
     if (stat != UMOUNT_STAT_SUCCESS) {
@@ -701,7 +706,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
 
     // If /data isn't mounted then we can skip the extra reboot steps below, since we don't need to
     // worry about unmounting it.
-    if (!IsDataMounted("*")) {
+    if (GetDataFsType().empty()) {
         sync();
         RebootSystem(cmd, reboot_target, reason);
         abort();
@@ -826,26 +831,34 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     sem_post(&reboot_semaphore);
 
     // Reboot regardless of umount status. If umount fails, fsck after reboot will fix it.
-    if (IsDataMounted("f2fs")) {
-        uint32_t flag = F2FS_GOING_DOWN_FULLSYNC;
-        unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
-        LOG(INFO) << "Invoking F2FS_IOC_SHUTDOWN during shutdown";
-        int ret = ioctl(fd.get(), F2FS_IOC_SHUTDOWN, &flag);
-        if (ret) {
-            PLOG(ERROR) << "Shutdown /data: ";
+    std::string data_fs_type = GetDataFsType();
+    if (!data_fs_type.empty()) {
+        LOG(WARNING) << "Umount /data failed, try to use ioctl to shutdown";
+        if (data_fs_type == "f2fs") {
+            uint32_t flag = F2FS_GOING_DOWN_FULLSYNC;
+            unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
+            LOG(INFO) << "Invoking F2FS_IOC_SHUTDOWN during shutdown";
+            int ret = ioctl(fd.get(), F2FS_IOC_SHUTDOWN, &flag);
+            if (ret) {
+                PLOG(ERROR) << "Shutdown /data: ";
+            } else {
+                LOG(INFO) << "Shutdown /data";
+            }
+        } else if (data_fs_type == "ext4") {
+            uint32_t flag = EXT4_GOING_FLAGS_DEFAULT;
+            unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
+            LOG(INFO) << "Invoking EXT4_IOC_SHUTDOWN during shutdown";
+            int ret = ioctl(fd.get(), EXT4_IOC_SHUTDOWN, &flag);
+            if (ret) {
+                PLOG(ERROR) << "Shutdown /data: ";
+            } else {
+                LOG(INFO) << "Shutdown /data";
+            }
         } else {
-            LOG(INFO) << "Shutdown /data";
-        }
-    } else if (IsDataMounted("ext4")) {
-        uint32_t flag = EXT4_GOING_FLAGS_DEFAULT;
-        unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
-        int ret = ioctl(fd.get(), EXT4_IOC_SHUTDOWN, &flag);
-        if (ret) {
-            PLOG(ERROR) << "Shutdown /data: ";
-        } else {
-            LOG(INFO) << "Shutdown /data";
+            LOG(ERROR) << "Unknown /data fs type: " << data_fs_type;
         }
     }
+
     RebootSystem(cmd, reboot_target, reason);
     abort();
 }

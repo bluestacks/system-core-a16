@@ -142,7 +142,7 @@ inline ErrorIgnoreEnoent ErrnoErrorIgnoreEnoent() {
     return ErrorIgnoreEnoent(errno);
 }
 
-std::vector<std::string> late_import_paths;
+[[clang::no_destroy]] std::vector<std::string> late_import_paths;
 
 static constexpr std::chrono::nanoseconds kCommandRetryTimeout = 5s;
 
