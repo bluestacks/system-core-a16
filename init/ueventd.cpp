@@ -377,7 +377,8 @@ int ueventd_main(int argc, char** argv) {
     uevent_handlers.emplace_back(std::move(device_handler));
     uevent_handlers.emplace_back(std::make_unique<FirmwareHandler>(
             std::move(ueventd_configuration.firmware_directories),
-            std::move(ueventd_configuration.external_firmware_handlers)));
+            std::move(ueventd_configuration.external_firmware_handlers),
+            /*serial_handler_after_cold_boot=*/false));
 
     if (ueventd_configuration.enable_modalias_handling) {
         std::vector<std::string> base_paths = {"/odm/lib/modules", "/vendor/lib/modules"};
