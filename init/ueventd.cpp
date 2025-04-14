@@ -43,6 +43,7 @@
 #include "modalias_handler.h"
 #include "selabel.h"
 #include "selinux.h"
+#include "uevent_dependency_graph.h"
 #include "uevent_handler.h"
 #include "uevent_listener.h"
 #include "ueventd_parser.h"
@@ -337,6 +338,42 @@ static UeventdConfiguration GetConfiguration() {
     return ParseConfig(canonical);
 }
 
+void main_loop(const UeventListener& uevent_listener,
+               const std::vector<std::unique_ptr<UeventHandler>>& uevent_handlers) {
+    uevent_listener.Poll([&uevent_handlers](const Uevent& uevent) {
+        for (auto& uevent_handler : uevent_handlers) {
+            uevent_handler->HandleUevent(uevent);
+        }
+        return ListenerAction::kContinue;
+    });
+}
+
+void parallel_main_loop(const UeventListener& uevent_listener,
+                        const std::vector<std::unique_ptr<UeventHandler>>& uevent_handlers,
+                        size_t num_threads) {
+    LOG(INFO) << "parallel main loop is enabled with " << num_threads << " threads";
+
+    std::vector<std::thread> threads;
+    UeventDependencyGraph graph;
+
+    for (unsigned int i = 0; i < num_threads; i++) {
+        threads.emplace_back([&graph, &uevent_handlers] {
+            while (true) {
+                auto uevent = graph.WaitDependencyFreeEvent();
+                for (auto& uevent_handler : uevent_handlers) {
+                    uevent_handler->HandleUevent(uevent);
+                }
+                graph.MarkEventCompleted(uevent.seqnum);
+            }
+        });
+    }
+
+    uevent_listener.Poll([&graph](const Uevent& uevent) {
+        graph.Add(uevent);
+        return ListenerAction::kContinue;
+    });
+}
+
 int ueventd_main(int argc, char** argv) {
     /*
      * init sets the umask to 077 for forked processes. We need to
@@ -404,14 +441,21 @@ int ueventd_main(int argc, char** argv) {
 
     // Restore prio before main loop
     setpriority(PRIO_PROCESS, 0, 0);
-    uevent_listener.Poll([&uevent_handlers](const Uevent& uevent) {
-        for (auto& uevent_handler : uevent_handlers) {
-            uevent_handler->HandleUevent(uevent);
-        }
-        return ListenerAction::kContinue;
-    });
 
-    return 0;
+    if (ueventd_configuration.enable_parallel_ueventd_main_loop) {
+        size_t num_threads =
+                std::thread::hardware_concurrency() != 0 ? std::thread::hardware_concurrency() : 4;
+        if (ueventd_configuration.parallel_main_loop_max_workers.has_value()) {
+            num_threads = std::min(num_threads,
+                                   ueventd_configuration.parallel_main_loop_max_workers.value());
+        }
+        parallel_main_loop(uevent_listener, uevent_handlers, num_threads);
+    } else {
+        main_loop(uevent_listener, uevent_handlers);
+    }
+
+    LOG(ERROR) << "main loop exited unexpectedly";
+    return EXIT_FAILURE;
 }
 
 }  // namespace init
