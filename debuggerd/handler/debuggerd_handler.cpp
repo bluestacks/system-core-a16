@@ -103,19 +103,61 @@ static bool property_parse_bool(const char* name) {
   return cookie;
 }
 
+// Avoid using any other libc/libbase functions in this function to avoid doing
+// any allocations and to avoid calling any disallowed functions by accident.
+static const char* get_command_no_alloc(char* command, const size_t length) {
+  int fd = open("/proc/self/cmdline", O_RDONLY | O_CLOEXEC);
+  if (fd == -1) {
+    async_safe_format_log(ANDROID_LOG_WARN, "libc", "Opening /proc/self/cmdline failed: %s",
+                          strerrorname_np(errno));
+    return nullptr;
+  }
+  // Force the buffer to be null terminated to avoid cases where the first
+  // argument is longer than the total buffer. This might truncate the first
+  // argument of the command-line, but it's still possible to use the
+  // truncated name.
+  command[length - 1] = '\0';
+  ssize_t bytes = TEMP_FAILURE_RETRY(read(fd, command, length - 1));
+  close(fd);
+  if (bytes <= 0) {
+    async_safe_format_log(ANDROID_LOG_WARN, "libc", "/proc/self/cmdline read error: %s",
+                          bytes == -1 ? strerrorname_np(errno) : "zero bytes read");
+    return nullptr;
+  }
+
+  // Find the basename of the first argument in the command-line.
+  const char* arg0 = strrchr(command, '/');
+  return arg0 != nullptr ? &arg0[1] : command;
+}
+
 static bool is_permissive_mte() {
-  // Environment variable for testing or local use from shell.
+  // DO NOT REPLACE property_parse_bool with GetBoolProperty. That uses std::string which allocates,
+  // so it is not async-safe, and this function gets used in a signal handler.
   char* permissive_env = getenv("MTE_PERMISSIVE");
+  if (permissive_env && ParseBool(permissive_env) == ParseBoolResult::kTrue) {
+    return true;
+  }
+
+  if (property_parse_bool("persist.sys.mte.permissive") ||
+      property_parse_bool("persist.device_config.memory_safety_native.permissive.default")) {
+    return true;
+  }
+
+  // getprogrname() always returns nullptr in this context, so we need to read
+  // the cmdline directly to get the name of the running program.
+  // In addition, use /proc/self/cmdline instead of readlink of /proc/self/exe
+  // so that any process forked from the zygote has the correct name.
+  char command_buffer[256];
+  const char* command = get_command_no_alloc(command_buffer, sizeof(command_buffer));
+  if (command == nullptr) {
+    return false;
+  }
+
   char process_sysprop_name[512];
   async_safe_format_buffer(process_sysprop_name, sizeof(process_sysprop_name),
                            "persist.device_config.memory_safety_native.permissive.process.%s",
-                           android::base::Basename(android::base::GetExecutablePath()).c_str());
-  // DO NOT REPLACE this with GetBoolProperty. That uses std::string which allocates, so it is
-  // not async-safe, and this function gets used in a signal handler.
-  return property_parse_bool("persist.sys.mte.permissive") ||
-         property_parse_bool("persist.device_config.memory_safety_native.permissive.default") ||
-         property_parse_bool(process_sysprop_name) ||
-         (permissive_env && ParseBool(permissive_env) == ParseBoolResult::kTrue);
+                           command);
+  return property_parse_bool(process_sysprop_name);
 }
 
 static bool parse_uint_with_error_reporting(const char* s, const char* name, int* v) {
