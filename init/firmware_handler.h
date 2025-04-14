@@ -58,8 +58,8 @@ class FirmwareHandler : public UeventHandler {
     void ProcessFirmwareEvent(const std::string& path, const std::string& firmware) const;
     bool ForEachFirmwareDirectory(std::function<bool(const std::string&)> handler) const;
 
-    std::vector<std::string> firmware_directories_;
-    std::vector<ExternalFirmwareHandler> external_firmware_handlers_;
+    const std::vector<std::string> firmware_directories_;
+    const std::vector<ExternalFirmwareHandler> external_firmware_handlers_;
 };
 
 }  // namespace init
