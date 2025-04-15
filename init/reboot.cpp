@@ -381,8 +381,8 @@ static void KillAllProcesses() {
     WriteStringToFile("i", PROC_SYSRQ);
 }
 
-// Create reboot/shutdown monitor thread
-void RebootMonitorThread(unsigned int cmd) {
+// Reboot/shutdown monitor thread
+static void RebootMonitorThread(unsigned int cmd) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
@@ -450,6 +450,21 @@ void RebootMonitorThread(unsigned int cmd) {
 
     LOG(ERROR) << "Trigger crash at last!";
     WriteStringToFile("c", PROC_SYSRQ);
+}
+
+// Create reboot/shutdown monitor thread
+static void StartRebootMonitorThread(unsigned int cmd) {
+    static std::atomic_flag started{};
+
+    // Only allow the monitor to be started once.
+    if (started.test_and_set(std::memory_order_acquire)) {
+        LOG(INFO) << "RebootMonitorThread already started";
+        return;
+    }
+
+    LOG(INFO) << "Starting RebootMonitorThread";
+    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd);
+    reboot_monitor_thread.detach();
 }
 
 static bool UmountDynamicPartitions(const std::vector<std::string>& dynamic_partitions) {
@@ -714,8 +729,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     }
     LOG(INFO) << "Clean shutdown timeout: " << clean_shutdown_timeout.count() << " ms";
 
-    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd);
-    reboot_monitor_thread.detach();
+    StartRebootMonitorThread(cmd);
 
     // Ensure last reboot reason is reduced to canonical
     // alias reported in bootloader or system boot reason.
