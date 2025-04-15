@@ -176,7 +176,6 @@ libinit_cc_defaults {
         "libsnapshot_cow",
         "libsnapshot_init",
         "libxml2",
-        "lib_apex_manifest_proto_lite",
         "update_metadata-protos",
         "libgenfslabelsversion.ffi",
     ],
