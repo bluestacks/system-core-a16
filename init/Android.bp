@@ -162,6 +162,7 @@ libinit_cc_defaults {
         },
     },
     static_libs: [
+        "libapexd_flags",
         "libavb",
         "libavf_cc_flags",
         "libbootloader_message",
