@@ -41,7 +41,6 @@ class Modprobe {
     bool GetAllDependencies(const std::string& module, std::vector<std::string>* pre_dependencies,
                             std::vector<std::string>* dependencies,
                             std::vector<std::string>* post_dependencies);
-    void ResetModuleCount() { module_count_ = 0; }
     int GetModuleCount() { return module_count_; }
     bool IsBlocklisted(const std::string& module_name);
 
