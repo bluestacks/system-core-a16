@@ -382,7 +382,7 @@ static void KillAllProcesses() {
 }
 
 // Create reboot/shutdown monitor thread
-void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target) {
+void RebootMonitorThread(unsigned int cmd) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
@@ -445,7 +445,7 @@ void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target) {
     }
 
     if (cmd == ANDROID_RB_POWEROFF || cmd == ANDROID_RB_THERMOFF) {
-        RebootSystem(cmd, reboot_target);
+        RebootSystem(cmd, "");
     }
 
     LOG(ERROR) << "Trigger crash at last!";
@@ -714,7 +714,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     }
     LOG(INFO) << "Clean shutdown timeout: " << clean_shutdown_timeout.count() << " ms";
 
-    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd, reboot_target);
+    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd);
     reboot_monitor_thread.detach();
 
     // Ensure last reboot reason is reduced to canonical
