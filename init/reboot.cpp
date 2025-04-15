@@ -931,6 +931,20 @@ static bool CommandIsPresent(bootloader_message* boot) {
     return false;
 }
 
+void HandleShutdownRequestedMessage(const std::string& command) {
+    int cmd;
+
+    if (command.starts_with("0thermal")) {
+        cmd = ANDROID_RB_THERMOFF;
+    } else if (command.starts_with("0")) {
+        cmd = ANDROID_RB_POWEROFF;
+    } else {
+        cmd = ANDROID_RB_RESTART2;
+    }
+
+    StartRebootMonitorThread(cmd);
+}
+
 void HandlePowerctlMessage(const std::string& command) {
     unsigned int cmd = 0;
     std::vector<std::string> cmd_params = Split(command, ",");
