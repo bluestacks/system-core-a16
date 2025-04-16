@@ -184,9 +184,11 @@ static int __ashmem_open_locked() {
 
     struct stat st;
     if (TEMP_FAILURE_RETRY(fstat(fd, &st)) == -1) {
+        ALOGE("Unable to fstat ashmem device: %m");
         return -1;
     }
     if (!S_ISCHR(st.st_mode) || !st.st_rdev) {
+        ALOGE("ashmem device is not a character device");
         errno = ENOTTY;
         return -1;
     }
