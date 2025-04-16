@@ -168,7 +168,6 @@ static std::string get_ashmem_device_path() {
     return "/dev/ashmem" + boot_id;
 }
 
-/* logistics of getting file descriptor for ashmem */
 static int __ashmem_open_locked() {
     static const std::string ashmem_device_path = get_ashmem_device_path();
 
