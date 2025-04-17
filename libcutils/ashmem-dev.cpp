@@ -67,15 +67,6 @@ static bool debug_log = false;
  * which will be cached by the caller.
  */
 static bool __has_memfd_support() {
-   // Previously this function checked if memfd is supported by checking if
-   // vendor VNDK version is greater than Q. As we can assume all treblelized
-   // device using this code is up to date enough to use memfd, memfd is allowed
-   // if the device is treblelized.
-   // TODO: is this ever false any more?
-   if (android::base::GetBoolProperty("ro.treble.enabled", false) == false) {
-        return false;
-    }
-
     // Used to turn on/off the detection at runtime, in the future this
     // property will be removed once we switch everything over to memfd.
     //
