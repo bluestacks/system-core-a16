@@ -207,9 +207,11 @@ static Result<void> CallVdc(const std::string& system, const std::string& cmd) {
     return Error() << "'/system/bin/vdc " << system << " " << cmd << "' failed : " << status;
 }
 
+// This function should be called just before kernel reboot/shutdown. At this point, the logd
+// is killed, regular logger does not work. Use KLOG to make sure the log is available in
+// pstore console file, preventing log data from losing.
 static void LogShutdownTime(UmountStat stat, const Timer& t) {
-    LOG(WARNING) << "powerctl_shutdown_time_ms:" << std::to_string(t.duration().count()) << ":"
-                 << stat;
+    KLOG_WARNING(LOG_TAG, "powerctl_shutdown_time_ms:%lld:%d\n", t.duration().count(), stat);
 }
 
 // Gets the filesystem type of the /data partition.
@@ -385,7 +387,7 @@ static void KillAllProcesses() {
 }
 
 // Reboot/shutdown monitor thread
-static void RebootMonitorThread(unsigned int cmd) {
+static void RebootMonitorThread(unsigned int cmd, const Timer& shutdown_timer) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
@@ -448,6 +450,7 @@ static void RebootMonitorThread(unsigned int cmd) {
     }
 
     if (cmd == ANDROID_RB_POWEROFF || cmd == ANDROID_RB_THERMOFF) {
+        LogShutdownTime(UMOUNT_STAT_TIMEOUT, shutdown_timer);
         RebootSystem(cmd, "");
     }
 
@@ -456,7 +459,7 @@ static void RebootMonitorThread(unsigned int cmd) {
 }
 
 // Create reboot/shutdown monitor thread
-static void StartRebootMonitorThread(unsigned int cmd) {
+static void StartRebootMonitorThread(unsigned int cmd, const Timer& shutdown_timer) {
     static std::atomic_flag started{};
 
     // Only allow the monitor to be started once.
@@ -466,7 +469,7 @@ static void StartRebootMonitorThread(unsigned int cmd) {
     }
 
     LOG(INFO) << "Starting RebootMonitorThread";
-    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd);
+    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd, shutdown_timer);
     reboot_monitor_thread.detach();
 }
 
@@ -733,7 +736,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     }
     LOG(INFO) << "Clean shutdown timeout: " << clean_shutdown_timeout.count() << " ms";
 
-    StartRebootMonitorThread(cmd);
+    StartRebootMonitorThread(cmd, t);
 
     // Ensure last reboot reason is reduced to canonical
     // alias reported in bootloader or system boot reason.
@@ -750,6 +753,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     // worry about unmounting it.
     if (GetDataFsType().empty()) {
         sync();
+        LogShutdownTime(UMOUNT_STAT_SKIPPED, t);
         RebootSystem(cmd, reboot_target, reason);
         abort();
     }
@@ -865,7 +869,6 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         LOG(INFO) << "sync() after umount took" << sync_timer;
     }
     if (!is_thermal_shutdown) std::this_thread::sleep_for(100ms);
-    LogShutdownTime(stat, t);
 
     // Reboot regardless of umount status. If umount fails, fsck after reboot will fix it.
     std::string data_fs_type = GetDataFsType();
@@ -897,6 +900,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         }
     }
 
+    LogShutdownTime(stat, t);
     RebootSystem(cmd, reboot_target, reason);
     abort();
 }
@@ -938,6 +942,7 @@ static bool CommandIsPresent(bootloader_message* boot) {
 
 void HandleShutdownRequestedMessage(const std::string& command) {
     int cmd;
+    Timer t;
 
     if (command.starts_with("0thermal")) {
         cmd = ANDROID_RB_THERMOFF;
@@ -947,7 +952,7 @@ void HandleShutdownRequestedMessage(const std::string& command) {
         cmd = ANDROID_RB_RESTART2;
     }
 
-    StartRebootMonitorThread(cmd);
+    StartRebootMonitorThread(cmd, t);
 }
 
 void HandlePowerctlMessage(const std::string& command) {
