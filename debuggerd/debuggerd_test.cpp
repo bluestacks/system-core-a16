@@ -17,6 +17,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <linux/prctl.h>
@@ -24,6 +25,7 @@
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/capability.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
@@ -3436,4 +3438,34 @@ TEST_F(CrasherTest, log_with_with_special_printable_ascii) {
   EXPECT_TRUE(pos != std::string::npos) << "Couldn't find log message: " << result;
   EXPECT_TRUE(result.find(" after", pos + 1) != std::string::npos)
       << "Couldn't find sanitized log message: " << result;
+}
+
+TEST_F(CrasherTest, executable) {
+  SKIP_WITH_HWASAN << "prctl(PR_SET_MM, PR_SET_MM_ARG_{START,END} not supported on hwasan.";
+
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess([]() {
+    const char command_line[] = "TestCommand";
+
+    EXPECT_EQ(0, prctl(PR_SET_MM, PR_SET_MM_ARG_START,
+                       reinterpret_cast<unsigned long>(command_line), 0, 0))
+        << strerror(errno);
+    EXPECT_EQ(0,
+              prctl(PR_SET_MM, PR_SET_MM_ARG_END,
+                    reinterpret_cast<unsigned long>(&command_line[sizeof(command_line) - 1]), 0, 0))
+        << strerror(errno);
+    abort();
+  });
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGABRT);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result, R"(Executable: \S*debuggerd_test\S*\n)");
+  ASSERT_MATCH(result, R"(Cmdline: TestCommand\n)");
 }

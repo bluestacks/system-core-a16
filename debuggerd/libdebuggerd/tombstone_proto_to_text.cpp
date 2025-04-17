@@ -103,6 +103,11 @@ static uint64_t untag_address(Architecture arch, uint64_t addr) {
 static void print_thread_header(CallbackType callback, const Tombstone& tombstone,
                                 const Thread& thread, bool should_log) {
   const char* process_name = "<unknown>";
+  if (!tombstone.executable_name().empty()) {
+    CB(should_log, "Executable: %s", tombstone.executable_name().c_str());
+  } else {
+    CB(should_log, "Executable: <unknown>");
+  }
   if (!tombstone.command_line().empty()) {
     process_name = tombstone.command_line()[0].c_str();
     CB(should_log, "Cmdline: %s", android::base::Join(tombstone.command_line(), " ").c_str());

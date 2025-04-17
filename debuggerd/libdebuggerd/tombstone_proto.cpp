@@ -875,6 +875,7 @@ void engrave_tombstone_proto(Tombstone* tombstone, unwindstack::AndroidUnwinder*
   result.set_page_size(getpagesize());
   result.set_has_been_16kb_mode(android::base::GetBoolProperty("ro.misctrl.16kb_before", false));
 
+  result.set_executable_name(target_thread.executable_name);
   auto cmd_line = result.mutable_command_line();
   for (const auto& arg : target_thread.command_line) {
     *cmd_line->Add() = arg;
