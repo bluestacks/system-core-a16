@@ -95,9 +95,6 @@ class ISnapshotHandlerManager {
     // Returns whether all snapshots have verified.
     virtual bool GetVerificationStatus() = 0;
 
-    // Disable partition verification
-    virtual void DisableVerification() = 0;
-
     // Pause Merge threads
     virtual void PauseMerge() = 0;
 
@@ -123,7 +120,6 @@ class SnapshotHandlerManager final : public ISnapshotHandlerManager {
     void TerminateMergeThreads() override;
     double GetMergePercentage() override;
     bool GetVerificationStatus() override;
-    void DisableVerification() override { perform_verification_ = false; }
     void PauseMerge() override;
     void ResumeMerge() override;
 

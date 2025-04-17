@@ -323,7 +323,7 @@ bool SnapshotHandler::Start() {
     // Now that the worker threads are up, scan the partitions.
     // If the snapshot-merge is being resumed, there is no need to scan as the
     // current slot is already marked as boot complete.
-    if (perform_verification_ && !resume_merge_) {
+    if (!handler_options_.skip_verification && !resume_merge_) {
         update_verify_->VerifyUpdatePartition();
     }
 
