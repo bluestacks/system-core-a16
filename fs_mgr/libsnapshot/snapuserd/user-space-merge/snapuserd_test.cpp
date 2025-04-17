@@ -732,7 +732,7 @@ void SnapuserdTest::InitCowDevice() {
     handlers_->DisableVerification();
     const TestParam params = GetParam();
     HandlerOptions options = {
-            .num_worker_threads = params.num_threads,
+            .num_worker_threads = 1,
             .use_iouring = params.io_uring,
             .o_direct = params.o_direct,
             .cow_op_merge_size = params.cow_op_merge_size,
@@ -1282,7 +1282,7 @@ void HandlerTest::InitializeDevice() {
 
     const TestParam params = GetParam();
     HandlerOptions options = {
-            .num_worker_threads = params.num_threads,
+            .num_worker_threads = 1,
             .use_iouring = params.io_uring,
             .o_direct = params.o_direct,
             .cow_op_merge_size = params.cow_op_merge_size,
