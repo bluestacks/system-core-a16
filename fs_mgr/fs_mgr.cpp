@@ -93,6 +93,8 @@
 #define SYSFS_EXT4_VERITY "/sys/fs/ext4/features/verity"
 #define SYSFS_EXT4_CASEFOLD "/sys/fs/ext4/features/casefold"
 
+#define SYSFS_F2FS_LINEAR_LOOKUP "/sys/fs/f2fs/features/linear_lookup"
+
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
 using android::base::Basename;
@@ -186,6 +188,28 @@ static bool umount_retry(const std::string& mount_point) {
     return umounted;
 }
 
+static const char* get_disable_linear_lookup_option(void) {
+    std::string linear_lookup_support;
+
+    if (!android::base::ReadFileToString(SYSFS_F2FS_LINEAR_LOOKUP, &linear_lookup_support)) {
+        PERROR << "Failed to open " << SYSFS_F2FS_LINEAR_LOOKUP;
+        return nullptr;
+    }
+
+    if (android::base::Trim(linear_lookup_support) != "supported") {
+        PERROR << "Current f2fs linear_lookup not supported by kernel";
+        return nullptr;
+    }
+
+    std::string prop = android::base::GetProperty("persist.fsck.disable_linear_lookup", "");
+    if (prop == "on") {
+        return "--nolinear-lookup=1";
+    } else if (prop == "off") {
+        return "--nolinear-lookup=0";
+    }
+    return nullptr;
+}
+
 static void check_fs(const std::string& blk_device, const std::string& fs_type,
                      const std::string& target, int* fs_stat) {
     int status;
@@ -258,23 +282,26 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
             }
         }
     } else if (is_f2fs(fs_type)) {
-        const char* f2fs_fsck_argv[] = {F2FS_FSCK_BIN,     "-a", "-c", "10000", "--debug-cache",
-                                        blk_device.c_str()};
-        const char* f2fs_fsck_forced_argv[] = {
-                F2FS_FSCK_BIN, "-f", "-c", "10000", "--debug-cache", blk_device.c_str()};
-
         if (access(F2FS_FSCK_BIN, X_OK)) {
             LINFO << "Not running " << F2FS_FSCK_BIN << " on " << realpath(blk_device)
                   << " (executable not in system image)";
         } else {
-            if (should_force_check(*fs_stat)) {
-                LINFO << "Running " << F2FS_FSCK_BIN << " -f -c 10000 --debug-cache "
-                      << realpath(blk_device);
-                ret = logwrap_fork_execvp(ARRAY_SIZE(f2fs_fsck_forced_argv), f2fs_fsck_forced_argv,
-                                          &status, false, LOG_KLOG | LOG_FILE, false,
-                                          FSCK_LOG_FILE);
+            const char* linear_lookup_option = get_disable_linear_lookup_option();
+            const char* force = should_force_check(*fs_stat) ? "-f" : "-a";
+
+            if (linear_lookup_option) {
+                const char* f2fs_fsck_argv[] = {
+                        F2FS_FSCK_BIN,     force,           "-c",
+                        "10000",           "--debug-cache", linear_lookup_option,
+                        blk_device.c_str()};
+                LINFO << "Running " << F2FS_FSCK_BIN << " " << force << " -c 10000 --debug-cache "
+                      << linear_lookup_option << " " << realpath(blk_device);
+                ret = logwrap_fork_execvp(ARRAY_SIZE(f2fs_fsck_argv), f2fs_fsck_argv, &status,
+                                          false, LOG_KLOG | LOG_FILE, false, FSCK_LOG_FILE);
             } else {
-                LINFO << "Running " << F2FS_FSCK_BIN << " -a -c 10000 --debug-cache "
+                const char* f2fs_fsck_argv[] = {F2FS_FSCK_BIN, force,           "-c",
+                                                "10000",       "--debug-cache", blk_device.c_str()};
+                LINFO << "Running " << F2FS_FSCK_BIN << " " << force << " -c 10000 --debug-cache "
                       << realpath(blk_device);
                 ret = logwrap_fork_execvp(ARRAY_SIZE(f2fs_fsck_argv), f2fs_fsck_argv, &status,
                                           false, LOG_KLOG | LOG_FILE, false, FSCK_LOG_FILE);
