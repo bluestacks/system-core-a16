@@ -16,11 +16,6 @@
 
 #include <cutils/ashmem.h>
 
-/*
- * Implementation of the user-space ashmem API for devices, which have our
- * ashmem-enabled kernel. See ashmem-sim.c for the "fake" tmp-based version,
- * used by the simulator.
- */
 #define LOG_TAG "ashmem"
 
 #include <errno.h>
@@ -46,66 +41,36 @@
 
 #include "ashmem-internal.h"
 
+/*
+ * Implementation of the userspace ashmem API for devices.
+ *
+ * This may use ashmem or memfd. See has_memfd_support().
+ *
+ * See ashmem-host.cpp for the temporary file based alternative for the host.
+ */
+
 /* ashmem identity */
 static dev_t __ashmem_rdev;
+
 /*
  * If we trigger a signal handler in the middle of locked activity and the
  * signal handler calls ashmem, we could get into a deadlock state.
+ *
+ * TODO: this is only used to guard __ashmem_rdev; make that atomic instead?
  */
 static pthread_mutex_t __ashmem_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * has_memfd_support() determines if the device can use memfd. memfd support
- * has been there for long time, but certain things in it may be missing.  We
- * check for needed support in it. Also we check if the VNDK version of
- * libcutils being used is new enough, if its not, then we cannot use memfd
- * since the older copies may be using ashmem so we just use ashmem. Once all
- * Android devices that are getting updates are new enough (ex, they were
- * originally shipped with Android release > P), then we can just use memfd and
- * delete all ashmem code from libcutils (while preserving the interface).
- *
- * NOTE:
- * The sys.use_memfd property is set by default to false in Android
- * to temporarily disable memfd, till vendor and apps are ready for it.
- * The main issue: either apps or vendor processes can directly make ashmem
- * IOCTLs on FDs they receive by assuming they are ashmem, without going
- * through libcutils. Such fds could have very well be originally created with
- * libcutils hence they could be memfd. Thus the IOCTLs will break.
- *
- * Set default value of sys.use_memfd property to true once the issue is
- * resolved, so that the code can then self-detect if kernel support is present
- * on the device. The property can also set to true from adb shell, for
- * debugging.
- */
-
 /* set to true for verbose logging and other debug  */
 static bool debug_log = false;
-
-/* Determine if vendor processes would be ok with memfd in the system:
- *
- * Previously this function checked if memfd is supported by checking if
- * vendor VNDK version is greater than Q. As we can assume all treblelized
- * device using this code is up to date enough to use memfd, memfd is allowed
- * if the device is treblelized.
- */
-static bool check_vendor_memfd_allowed() {
-    static bool is_treblelized = android::base::GetBoolProperty("ro.treble.enabled", false);
-
-    return is_treblelized;
-}
 
 /* Determine if memfd can be supported. This is just one-time hardwork
  * which will be cached by the caller.
  */
 static bool __has_memfd_support() {
-    if (check_vendor_memfd_allowed() == false) {
-        return false;
-    }
-
-    /* Used to turn on/off the detection at runtime, in the future this
-     * property will be removed once we switch everything over to ashmem.
-     * Currently it is used only for debugging to switch the system over.
-     */
+    // Used to turn on/off the detection at runtime, in the future this
+    // property will be removed once we switch everything over to memfd.
+    //
+    // This can be set to true from the adb shell for debugging.
     if (!android::base::GetBoolProperty("sys.use_memfd", false)) {
         if (debug_log) {
             ALOGD("sys.use_memfd=false so memfd disabled");
@@ -113,31 +78,30 @@ static bool __has_memfd_support() {
         return false;
     }
 
-    // Check if kernel support exists, otherwise fall back to ashmem.
-    // This code needs to build on old API levels, so we can't use the libc
-    // wrapper.
+    // Check that the kernel supports memfd_create().
+    // This code needs to build on API levels before 30,
+    // so we can't use the libc wrapper.
     android::base::unique_fd fd(
             syscall(__NR_memfd_create, "test_android_memfd", MFD_CLOEXEC | MFD_ALLOW_SEALING));
     if (fd == -1) {
-        ALOGE("memfd_create failed: %m, no memfd support");
+        ALOGE("memfd_create() failed: %m, no memfd support");
         return false;
     }
 
+    // Check that the kernel supports sealing.
     if (fcntl(fd, F_ADD_SEALS, F_SEAL_FUTURE_WRITE) == -1) {
         ALOGE("fcntl(F_ADD_SEALS) failed: %m, no memfd support");
         return false;
     }
 
+    // Check that the kernel supports truncation.
     size_t buf_size = getpagesize();
     if (ftruncate(fd, buf_size) == -1) {
         ALOGE("ftruncate(%zd) failed to set memfd buffer size: %m, no memfd support", buf_size);
         return false;
     }
 
-    /*
-     * Ensure that the kernel supports ashmem ioctl commands on memfds. If not,
-     * fall back to using ashmem.
-     */
+    // Check that the kernel supports the ashmem ioctls on a memfd.
     int ashmem_size = TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_GET_SIZE, 0));
     if (ashmem_size != static_cast<int>(buf_size)) {
         ALOGE("ioctl(ASHMEM_GET_SIZE): %d != buf_size: %zd , no ashmem-memfd compat support",
@@ -168,7 +132,6 @@ static std::string get_ashmem_device_path() {
     return "/dev/ashmem" + boot_id;
 }
 
-/* logistics of getting file descriptor for ashmem */
 static int __ashmem_open_locked() {
     static const std::string ashmem_device_path = get_ashmem_device_path();
 
@@ -184,9 +147,11 @@ static int __ashmem_open_locked() {
 
     struct stat st;
     if (TEMP_FAILURE_RETRY(fstat(fd, &st)) == -1) {
+        ALOGE("Unable to fstat ashmem device: %m");
         return -1;
     }
     if (!S_ISCHR(st.st_mode) || !st.st_rdev) {
+        ALOGE("ashmem device is not a character device");
         errno = ENOTTY;
         return -1;
     }
@@ -283,8 +248,8 @@ int ashmem_valid(int fd) {
 }
 
 static int memfd_create_region(const char* name, size_t size) {
-    // This code needs to build on old API levels, so we can't use the libc
-    // wrapper.
+    // This code needs to build on API levels before 30,
+    // so we can't use the libc wrapper.
     android::base::unique_fd fd(syscall(__NR_memfd_create, name, MFD_CLOEXEC | MFD_ALLOW_SEALING));
 
     if (fd == -1) {

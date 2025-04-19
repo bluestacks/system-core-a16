@@ -142,9 +142,9 @@ Result<void> ParseRcScriptsFromApex(const std::string& apex_name) {
     return ParseRcScripts(configs);
 }
 
-Result<void> ParseRcScriptsFromAllApexes(bool bootstrap) {
+Result<void> ParseRcScriptsFromAllApexes(bool is_default_mnt_ns) {
     std::set<std::string> skip_apexes;
-    if (!bootstrap) {
+    if (is_default_mnt_ns) {
         // In case we already loaded config files from bootstrap APEXes, we need to avoid loading
         // them again. We can get the list of bootstrap APEXes by scanning /bootstrap-apex and
         // skip them in CollectRcScriptsFromApex.

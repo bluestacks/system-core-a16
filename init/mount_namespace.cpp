@@ -26,8 +26,13 @@
 #include <android-base/properties.h>
 #include <android-base/result.h>
 #include <android-base/unique_fd.h>
+#include <com_android_apex_flags.h>
 
 #include "util.h"
+
+using android::base::GetBoolProperty;
+using android::base::GetIntProperty;
+using android::base::SetProperty;
 
 namespace android {
 namespace init {
@@ -77,10 +82,31 @@ static std::string GetMountNamespaceId() {
 // In case we have two sets of APEXes (non-updatable, updatable), we need two separate mount
 // namespaces.
 bool NeedsTwoMountNamespaces() {
-    if (IsRecoveryMode()) return false;
-    // In microdroid, there's only one set of APEXes in built-in directories include block devices.
-    if (IsMicrodroid()) return false;
-    return true;
+    static bool needs_two_mount_namespaces = []() {
+        if (IsRecoveryMode()) return false;
+        // In microdroid, there's only one set of APEXes in built-in directories include block
+        // devices.
+        if (IsMicrodroid()) return false;
+
+        if constexpr (com::android::apex::flags::mount_before_data()) {
+            // For a launching device (>=37) with no compressed apexes, apexd-bootstrap can activate
+            // all apexes. Hence, we don't need two separate mount namespaces.
+            int product_first_api_level = GetIntProperty("ro.product.first_api_level", 0);
+            int build_version_sdk = GetIntProperty("ro.build.version.sdk", 0);
+            bool is_launching_device = product_first_api_level >= build_version_sdk;
+            if (is_launching_device && product_first_api_level >= 37) {
+                if (!GetBoolProperty("apexd.config.compressed_apex", true)) {
+                    return false;
+                }
+            }
+            // Upgrade device falls back to the legacy two-round activation because there might be
+            // compressed apexes or downloaded apexes which require the data partition.
+            // TODO(b/381175707) Migrate upgrade devices with no compressed apexes.
+        }
+
+        return true;
+    }();
+    return needs_two_mount_namespaces;
 }
 
 bool SetupMountNamespaces() {
@@ -148,8 +174,8 @@ bool SetupMountNamespaces() {
     // activated by apexd. In the namespace for pre-apexd processes, small
     // number of essential APEXes (e.g. com.android.runtime) are activated.
     // In the namespace for post-apexd processes, all APEXes are activated.
-    bool success = true;
-    if (NeedsTwoMountNamespaces()) {
+    bool needs_two_mnt_ns = NeedsTwoMountNamespaces();
+    if (needs_two_mnt_ns) {
         // Creating a new namespace by cloning, saving, and switching back to
         // the original namespace.
         if (unshare(CLONE_NEWNS) == -1) {
@@ -186,8 +212,13 @@ bool SetupMountNamespaces() {
         default_ns_id = GetMountNamespaceId();
     }
 
+    if constexpr (com::android::apex::flags::mount_before_data()) {
+        // Expose the decision to other components like apexd
+        SetProperty("ro.init.mnt_ns.count", needs_two_mnt_ns ? "2" : "1");
+    }
+
     LOG(INFO) << "SetupMountNamespaces done";
-    return success;
+    return true;
 }
 
 // Switch the mount namespace of the current process from bootstrap to default OR from default to

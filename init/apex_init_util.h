@@ -32,7 +32,7 @@ std::set<std::string> GetApexListFrom(const std::string& apex_dir);
 Result<void> ParseRcScriptsFromApex(const std::string& apex_name);
 
 // Parse all RC scripts for all apexes under /apex.
-Result<void> ParseRcScriptsFromAllApexes(bool bootstrap);
+Result<void> ParseRcScriptsFromAllApexes(bool is_default_mnt_ns);
 
 }  // namespace init
 }  // namespace android

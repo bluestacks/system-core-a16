@@ -424,7 +424,7 @@ const std::map<std::string, int32_t> kBootReasonMap = {
     {"reboot,mount_userdata_failed", 190},
     {"reboot,forcedsilent", 191},
     {"reboot,forcednonsilent", 192},
-    {"reboot,thermal,tj", 193},
+    {"reboot,thermal,tj.*", 193},
     {"reboot,emergency", 194},
     {"reboot,factory", 195},
     {"reboot,fastboot", 196},
@@ -472,6 +472,7 @@ const std::map<std::string, int32_t> kBootReasonMap = {
     {"reboot,fship.*", 238},
     {"reboot,ocp,.*", 239},
     {"reboot,ntc,pmic,sub", 240},
+    {"reboot,telemtemp,pmic,main", 241},
 };
 
 // Converts a string value representing the reason the system booted to an
@@ -1273,10 +1274,16 @@ void LogBootInfoToStatsd(std::chrono::milliseconds end_time,
                          double time_since_last_boot_sec) {
   auto reason = android::base::GetProperty(bootloader_reboot_reason_property, "<EMPTY>");
   auto system_reason = android::base::GetProperty(system_reboot_reason_property, "<EMPTY>");
-  android::util::bootstats::stats_write(android::util::bootstats::BOOT_SEQUENCE_REPORTED,
-                                        reason.c_str(), system_reason.c_str(), end_time.count(),
-                                        total_duration.count(), (int64_t)bootloader_duration_ms,
-                                        (int64_t)time_since_last_boot_sec * 1000);
+  auto system_reason_parts = android::base::Split(system_reason, ",");
+  std::string main_reason, sub_reason, detail;
+  main_reason = (system_reason_parts.size() > 0) ? system_reason_parts[0] : "";
+  sub_reason = (system_reason_parts.size() > 1) ? system_reason_parts[1] : "";
+  detail = (system_reason_parts.size() > 2) ? system_reason_parts[2] : "";
+  android::util::bootstats::stats_write(
+      android::util::bootstats::BOOT_SEQUENCE_REPORTED, reason.c_str(), system_reason.c_str(),
+      total_duration.count(), (int64_t)bootloader_duration_ms,
+      (int64_t)time_since_last_boot_sec * 1000, end_time.count(),
+      main_reason.c_str(), sub_reason.c_str(), detail.c_str());
 }
 
 void SetSystemBootReason() {
