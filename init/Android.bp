@@ -599,18 +599,18 @@ cc_defaults {
         "-Werror",
     ],
     static_libs: [
-        "libbase",
         "libfstab",
-        "libselinux",
         "libpropertyinfoserializer",
         "libpropertyinfoparser",
     ],
     whole_static_libs: ["libcap"],
     shared_libs: [
+        "libbase",
         "libcutils",
         "liblog",
         "libprocessgroup",
         "libprotobuf-cpp-lite",
+        "libselinux",
     ],
     proto: {
         type: "lite",
