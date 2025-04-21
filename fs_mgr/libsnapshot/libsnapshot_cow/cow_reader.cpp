@@ -285,7 +285,7 @@ uint32_t CowReader::GetMaxCompressionSize() {
 //                        Replace-op-4, Zero-op-9, Replace-op-5 }
 //==============================================================
 bool CowReader::PrepMergeOps() {
-    std::vector<int> other_ops;
+    std::vector<uint32_t> other_ops;
     std::vector<uint32_t> merge_op_blocks;
     std::unordered_map<uint32_t, int> block_map;
 
@@ -356,7 +356,7 @@ bool CowReader::PrepMergeOps() {
 }
 
 bool CowReader::GetSequenceDataV2(std::vector<uint32_t>* merge_op_blocks,
-                                  std::vector<int>* other_ops,
+                                  std::vector<uint32_t>* other_ops,
                                   std::unordered_map<uint32_t, int>* block_map) {
     auto seq_ops_set = std::unordered_set<uint32_t>();
     size_t num_seqs = 0;
@@ -394,7 +394,7 @@ bool CowReader::GetSequenceDataV2(std::vector<uint32_t>* merge_op_blocks,
     return false;
 }
 
-bool CowReader::GetSequenceData(std::vector<uint32_t>* merge_op_blocks, std::vector<int>* other_ops,
+bool CowReader::GetSequenceData(std::vector<uint32_t>* merge_op_blocks, std::vector<uint32_t>* other_ops,
                                 std::unordered_map<uint32_t, int>* block_map) {
     std::unordered_set<uint32_t> seq_ops_set;
     // read sequence ops data
