@@ -68,14 +68,17 @@
 // time during cold boot.
 
 // Handling of uevent messages has two unique properties:
-// 1) It can be done in isolation; it doesn't need to read or write any status once it is started.
-// 2) It uses setegid() and setfscreatecon() so either care (aka locking) must be taken to ensure
-//    that no file system operations are done while the uevent process has an abnormal egid or
-//    fscreatecon or this handling must happen in a separate process.
-// Given the above two properties, it is best to fork() subprocesses to handle the uevents.  This
-// reduces the overhead and complexity that would be required in a solution with threads and locks.
-// In testing, a racy multithreaded solution has the same performance as the fork() solution, so
-// there is no reason to deal with the complexity of the former.
+// 1) Messages can be handled in isolation when they do not depend on another. A device event
+//    depends on another when the device is the same, parent, or child of another device which
+//    should be handled first by another event. e.g. An add event must be handled first before
+//    removal. A device foo must be added before foo/bar.
+// 2) The cold boot is unlikely to have events that depend on another in a critical manner.
+// Therefore, ueventd handles uevent message in parallel by fork() subprocesses. We chose fork()
+// instead of threads, since selabel_lookup_best_match function was not thread-safe. It's
+// been fixed today, and we are testing the thread-safety of selabel_lookup_best_match and other
+// necessary functions (setfscreatecon and setegid syscall wrapper of bionic) in ueventd_test.
+// However, we have not moved to thread-based parallelization. We didn't observe any significant
+// performance gain with threads compared to multi-processes, and multi-process is simpler.
 
 // One other important caveat during the boot process is the handling of SELinux restorecon.
 // Since many devices have child devices, calling selinux_android_restorecon() recursively for each

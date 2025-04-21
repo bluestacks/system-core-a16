@@ -24,6 +24,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -362,6 +363,7 @@ void DeviceHandler::TrackDeviceUevent(const Uevent& uevent) {
     std::string device;
     if (!Realpath(path, &device)) return;
 
+    std::lock_guard<std::mutex> lock(device_update_lock_);
     tracked_uevents_.emplace_back(uevent, device);
 }
 
@@ -733,10 +735,14 @@ void DeviceHandler::HandleUevent(const Uevent& uevent) {
     }
 
     if (uevent.action == "bind") {
+        std::lock_guard<std::mutex> lock(device_update_lock_);
+
         bound_drivers_[uevent.path] = uevent.driver;
         HandleBindInternal(uevent.driver, "add", uevent);
         return;
     } else if (uevent.action == "unbind") {
+        std::lock_guard<std::mutex> lock(device_update_lock_);
+
         if (bound_drivers_.count(uevent.path) == 0) return;
         HandleBindInternal(bound_drivers_[uevent.path], "remove", uevent);
 
@@ -811,8 +817,8 @@ DeviceHandler::DeviceHandler(std::vector<Permissions> dev_permissions,
       sysfs_permissions_(std::move(sysfs_permissions)),
       drivers_(std::move(drivers)),
       subsystems_(std::move(subsystems)),
-      boot_devices_(std::move(boot_devices)),
       boot_part_uuid_(boot_part_uuid),
+      boot_devices_(std::move(boot_devices)),
       skip_restorecon_(skip_restorecon),
       sysfs_mount_point_("/sys") {
     // If both a boot partition UUID and a list of boot devices are
