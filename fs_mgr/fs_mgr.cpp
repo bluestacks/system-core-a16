@@ -49,6 +49,7 @@
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/properties.h>
+#include <android-base/scopeguard.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
@@ -97,6 +98,7 @@
 using android::base::Basename;
 using android::base::GetBoolProperty;
 using android::base::GetUintProperty;
+using android::base::make_scope_guard;
 using android::base::Realpath;
 using android::base::SetProperty;
 using android::base::StartsWith;
@@ -1988,9 +1990,12 @@ static bool PrepareZramBackingDevice(off64_t size) {
         PERROR << "Cannot open target path: " << file_path;
         return false;
     }
+
+    // Always unlink zram_swap file to prevent file system access.
+    auto unlink_zram_swap_guard = make_scope_guard([] { unlink(file_path); });
+
     if (fallocate(target_fd.get(), 0, 0, size) < 0) {
         PERROR << "Cannot truncate target path: " << file_path;
-        unlink(file_path);
         return false;
     }
 
