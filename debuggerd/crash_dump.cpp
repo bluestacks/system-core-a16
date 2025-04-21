@@ -706,6 +706,7 @@ int main(int argc, char** argv) {
         info.siginfo = &siginfo;
         info.signo = info.siginfo->si_signo;
 
+        info.executable_name = get_executable_name(g_target_thread);
         info.command_line = get_command_line(g_target_thread);
       } else {
         info.registers.reset(unwindstack::Regs::RemoteGet(thread));
