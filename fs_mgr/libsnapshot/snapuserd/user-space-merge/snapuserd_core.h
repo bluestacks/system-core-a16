@@ -243,7 +243,6 @@ class SnapshotHandler : public std::enable_shared_from_this<SnapshotHandler> {
     bool merge_monitored_ = false;
     bool attached_ = false;
     bool scratch_space_ = false;
-    bool perform_verification_ = true;
     bool resume_merge_ = false;
     bool merge_complete_ = false;
     HandlerOptions handler_options_;
