@@ -23,9 +23,6 @@
 #include <linux/ashmem.h>
 #include <linux/memfd.h>
 #include <log/log.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -41,6 +38,8 @@
 
 #include "ashmem-internal.h"
 
+#include <atomic>
+
 /*
  * Implementation of the userspace ashmem API for devices.
  *
@@ -50,15 +49,7 @@
  */
 
 /* ashmem identity */
-static dev_t __ashmem_rdev;
-
-/*
- * If we trigger a signal handler in the middle of locked activity and the
- * signal handler calls ashmem, we could get into a deadlock state.
- *
- * TODO: this is only used to guard __ashmem_rdev; make that atomic instead?
- */
-static pthread_mutex_t __ashmem_lock = PTHREAD_MUTEX_INITIALIZER;
+static std::atomic<dev_t> __ashmem_rdev;
 
 /* set to true for verbose logging and other debug  */
 static bool debug_log = false;
@@ -132,7 +123,7 @@ static std::string get_ashmem_device_path() {
     return "/dev/ashmem" + boot_id;
 }
 
-static int __ashmem_open_locked() {
+static int __ashmem_open() {
     static const std::string ashmem_device_path = get_ashmem_device_path();
 
     if (ashmem_device_path.empty()) {
@@ -160,54 +151,32 @@ static int __ashmem_open_locked() {
     return fd.release();
 }
 
-static int __ashmem_open() {
-    pthread_mutex_lock(&__ashmem_lock);
-    int fd = __ashmem_open_locked();
-    pthread_mutex_unlock(&__ashmem_lock);
-    return fd;
+static void __init_ashmem_rdev() {
+    // If __ashmem_rdev hasn't been initialized yet,
+    // create an ashmem fd for that side effect.
+    // This shouldn't happen if all ashmem fds come from us,
+    // but we know that the libcutils code has been copy & pasted.
+    // (Chrome, for example, contains a copy of an old version.)
+    android::base::unique_fd fd(__ashmem_open());
 }
 
 /* Make sure file descriptor references ashmem, negative number means false */
+// TODO: return bool
 static int __ashmem_is_ashmem(int fd, bool fatal) {
+    if (__ashmem_rdev == 0) __init_ashmem_rdev();
+
     struct stat st;
-    if (fstat(fd, &st) < 0) {
-        return -1;
+    if (fstat(fd, &st) == -1) return -1;
+    if (S_ISCHR(st.st_mode) && st.st_rdev == __ashmem_rdev) {
+      return 0;
     }
 
-    dev_t rdev = 0; /* Too much complexity to sniff __ashmem_rdev */
-    if (S_ISCHR(st.st_mode) && st.st_rdev) {
-        pthread_mutex_lock(&__ashmem_lock);
-        rdev = __ashmem_rdev;
-        if (rdev) {
-            pthread_mutex_unlock(&__ashmem_lock);
-        } else {
-            int fd = __ashmem_open_locked();
-            if (fd < 0) {
-                pthread_mutex_unlock(&__ashmem_lock);
-                return -1;
-            }
-            rdev = __ashmem_rdev;
-            pthread_mutex_unlock(&__ashmem_lock);
-
-            close(fd);
-        }
-
-        if (st.st_rdev == rdev) {
-            return 0;
-        }
-    }
-
+    // TODO: move this to the single caller that actually wants it
     if (fatal) {
-        if (rdev) {
-            LOG_ALWAYS_FATAL("illegal fd=%d mode=0%o rdev=%d:%d expected 0%o %d:%d",
-              fd, st.st_mode, major(st.st_rdev), minor(st.st_rdev),
-              S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IRGRP,
-              major(rdev), minor(rdev));
-        } else {
-            LOG_ALWAYS_FATAL("illegal fd=%d mode=0%o rdev=%d:%d expected 0%o",
-              fd, st.st_mode, major(st.st_rdev), minor(st.st_rdev),
-              S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IRGRP);
-        }
+        LOG_ALWAYS_FATAL("illegal fd=%d mode=0%o rdev=%d:%d expected 0%o %d:%d",
+            fd, st.st_mode, major(st.st_rdev), minor(st.st_rdev),
+            S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IRGRP,
+            major(__ashmem_rdev), minor(__ashmem_rdev));
         /* NOTREACHED */
     }
 
