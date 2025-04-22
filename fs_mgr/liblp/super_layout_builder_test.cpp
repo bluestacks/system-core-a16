@@ -46,7 +46,9 @@ TEST(SuperImageTool, Layout) {
     ASSERT_NE(metadata, nullptr);
 
     auto geometry_blob = std::make_shared<std::string>(SerializeGeometry(metadata->geometry));
-    auto metadata_blob = std::make_shared<std::string>(SerializeMetadata(*metadata.get()));
+    auto metadata_blob =
+            std::make_shared<std::string>(ValidateAndSerializeMetadata(*metadata.get()));
+    ASSERT_FALSE(metadata_blob->empty());
     metadata_blob->resize(4_KiB, '\0');
 
     auto extents = tool.GetImageLayout();

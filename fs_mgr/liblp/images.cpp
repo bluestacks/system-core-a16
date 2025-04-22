@@ -112,7 +112,10 @@ std::unique_ptr<LpMetadata> ReadFromImageFile(const std::string& image_file) {
 
 bool WriteToImageFile(borrowed_fd fd, const LpMetadata& input) {
     std::string geometry = SerializeGeometry(input.geometry);
-    std::string metadata = SerializeMetadata(input);
+    std::string metadata = ValidateAndSerializeMetadata(input);
+    if (metadata.empty()) {
+        return false;
+    }
 
     std::string everything = geometry + metadata;
 
@@ -298,7 +301,10 @@ bool ImageBuilder::Build() {
     }
 
     std::string geometry_blob = SerializeGeometry(geometry_);
-    std::string metadata_blob = SerializeMetadata(metadata_);
+    std::string metadata_blob = ValidateAndSerializeMetadata(metadata_);
+    if (metadata_blob.empty()) {
+        return false;
+    }
     metadata_blob.resize(geometry_.metadata_max_size);
 
     // Two copies of geometry, then two copies of each metadata slot.
