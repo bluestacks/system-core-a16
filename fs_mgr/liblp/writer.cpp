@@ -47,7 +47,8 @@ static bool CompareGeometry(const LpMetadataGeometry& g1, const LpMetadataGeomet
            g1.logical_block_size == g2.logical_block_size;
 }
 
-std::string SerializeMetadata(const LpMetadata& input) {
+// Unvalidated serialization.
+static std::string SerializeMetadata(const LpMetadata& input) {
     LpMetadata metadata = input;
     LpMetadataHeader& header = metadata.header;
 
@@ -81,25 +82,35 @@ std::string SerializeMetadata(const LpMetadata& input) {
     return header_blob + tables;
 }
 
+// Validated serialization.
+std::string ValidateAndSerializeMetadata(const LpMetadata& metadata) {
+    const LpMetadataGeometry& geometry = metadata.geometry;
+
+    std::string blob = SerializeMetadata(metadata);
+
+    // Make sure we're writing within the space reserved.
+    if (blob.size() > geometry.metadata_max_size) {
+        LERROR << "Logical partition metadata is too large. " << blob.size() << " > "
+               << geometry.metadata_max_size;
+        return {};
+    }
+    return blob;
+}
+
 // Perform checks so we don't accidentally overwrite valid metadata with
 // potentially invalid metadata, or random partition data with metadata.
 static bool ValidateAndSerializeMetadata([[maybe_unused]] const IPartitionOpener& opener,
                                          const LpMetadata& metadata, std::string* blob) {
-    const LpMetadataGeometry& geometry = metadata.geometry;
-
-    *blob = SerializeMetadata(metadata);
-
-    // Make sure we're writing within the space reserved.
-    if (blob->size() > geometry.metadata_max_size) {
-        LERROR << "Logical partition metadata is too large. " << blob->size() << " > "
-               << geometry.metadata_max_size;
+    *blob = ValidateAndSerializeMetadata(metadata);
+    if (blob->empty()) {
         return false;
     }
 
     // Make sure the device has enough space to store two backup copies of the
     // metadata.
-    uint64_t reserved_size = LP_METADATA_GEOMETRY_SIZE +
-                             uint64_t(geometry.metadata_max_size) * geometry.metadata_slot_count;
+    uint64_t reserved_size =
+            LP_METADATA_GEOMETRY_SIZE +
+            uint64_t(metadata.geometry.metadata_max_size) * metadata.geometry.metadata_slot_count;
     uint64_t total_reserved = LP_PARTITION_RESERVED_BYTES + reserved_size * 2;
 
     const LpMetadataBlockDevice* super_device = GetMetadataSuperBlockDevice(metadata);
