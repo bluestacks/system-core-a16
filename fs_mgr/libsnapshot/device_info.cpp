@@ -86,10 +86,6 @@ bool DeviceInfo::EnsureBootHal() {
             LOG(ERROR) << "Could not find IBootControl HAL";
             return false;
         }
-        if (hal->GetVersion() < BootControlVersion::BOOTCTL_V1_1) {
-            LOG(ERROR) << "Could not find IBootControl 1.1 HAL";
-            return false;
-        }
         boot_control_ = std::move(hal);
     }
     return true;
