@@ -461,7 +461,7 @@ bool GetSnapshotUpdateStatus(FastbootDevice* device, const std::vector<std::stri
                              std::string* message) {
     // Note that we use the HAL rather than mounting /metadata, since we want
     // our results to match the bootloader.
-    auto hal = device->boot1_1();
+    auto hal = device->boot_control_hal();
     if (!hal) {
         *message = "not supported";
         return false;
