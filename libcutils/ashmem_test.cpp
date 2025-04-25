@@ -269,6 +269,19 @@ static void ForkMultiRegionTest(unique_fd fds[], int nRegions, size_t size) {
 
 }
 
+static void GetNameAshmemTest(const std::string &name) {
+    // We use __ashmem_open() to guarantee we get an ashmem fd. We need to do this since ashmem and
+    // memfd have different maximum name lengths.
+    unique_fd fd(__ashmem_open());
+    ASSERT_TRUE(fd >= 0);
+
+    ASSERT_EQ(0, ioctl(fd, ASHMEM_SET_NAME, name.c_str()));
+
+    char retName[ASHMEM_NAME_LEN];
+    ASSERT_EQ(0, ioctl(fd, ASHMEM_GET_NAME, retName));
+    ASSERT_STREQ(retName, name.substr(0, ASHMEM_NAME_LEN - 1).c_str());
+}
+
 TEST(AshmemTest, ForkTest) {
     const size_t size = getpagesize();
     unique_fd fd;
@@ -354,6 +367,15 @@ TEST(AshmemTest, SetNameKernelAccessTest) {
     ASSERT_EQ(0, munmap(testArea, pageSize));
 }
 
+TEST(AshmemTest, GetLongNameAshmemTests) {
+    std::string longName(ASHMEM_NAME_LEN - 1, 'A');
+    ASSERT_NO_FATAL_FAILURE(GetNameAshmemTest(longName));
+
+    longName.append(1, 'A');
+    // This should not fail because ashmem will just truncate the name if it is too long.
+    ASSERT_NO_FATAL_FAILURE(GetNameAshmemTest(longName));
+}
+
 class AshmemTestMemfdAshmemCompat : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -381,6 +403,26 @@ TEST_F(AshmemTestMemfdAshmemCompat, GetNameTest) {
     ASSERT_EQ(0, ioctl(fd, ASHMEM_GET_NAME, &testBuf));
     // ashmem_create_region(nullptr, ...) creates memfds with the name "none".
     ASSERT_STREQ(testBuf, "none");
+}
+
+TEST_F(AshmemTestMemfdAshmemCompat, GetLongNameMemfdTests) {
+    // memfd names have a maximum length of 249 bytes excluding the NUL terminating byte.
+    // See: https://man7.org/linux/man-pages/man2/memfd_create.2.html
+    const size_t max_memfd_name_len = 249;
+    std::string longName(max_memfd_name_len, 'A');
+    size_t pageSize = getpagesize();
+    unique_fd fd;
+    ASSERT_NO_FATAL_FAILURE(TestCreateRegion(pageSize, fd, PROT_READ | PROT_WRITE | PROT_EXEC,
+                                             longName.c_str()));
+
+    char retName[max_memfd_name_len + 1];
+    ASSERT_EQ(0, ioctl(fd, ASHMEM_GET_NAME, retName));
+    ASSERT_STREQ(retName, longName.c_str());
+
+    longName.append(1, 'A');
+    // Use ashmem_create_region() since it should fail, since the string is now over the maximum
+    // length.
+    ASSERT_LT(ashmem_create_region(longName.c_str(), pageSize), 0);
 }
 
 TEST_F(AshmemTestMemfdAshmemCompat, SetSizeTest) {

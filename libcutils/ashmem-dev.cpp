@@ -123,7 +123,7 @@ static std::string get_ashmem_device_path() {
     return "/dev/ashmem" + boot_id;
 }
 
-static int __ashmem_open() {
+int __ashmem_open() {
     static const std::string ashmem_device_path = get_ashmem_device_path();
 
     if (ashmem_device_path.empty()) {
