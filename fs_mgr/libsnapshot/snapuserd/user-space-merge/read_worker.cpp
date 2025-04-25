@@ -18,6 +18,7 @@
 
 #include <libsnapshot/cow_format.h>
 #include <pthread.h>
+#include <sys/prctl.h>
 
 #include "read_worker.h"
 #include "snapuserd_core.h"
@@ -266,7 +267,9 @@ bool ReadWorker::Init() {
 bool ReadWorker::Run() {
     SNAP_LOG(INFO) << "Processing snapshot I/O requests....";
 
-    pthread_setname_np(pthread_self(), "ReadWorker");
+    std::string thread_name = "ReadWorker_" + misc_name_;
+    prctl(PR_SET_NAME, thread_name.c_str());
+
     auto worker_thread_priority = android::base::GetUintProperty<uint32_t>(
             "ro.virtual_ab.worker_thread_priority", ANDROID_PRIORITY_NORMAL);
 
@@ -274,10 +277,21 @@ bool ReadWorker::Run() {
         SNAP_PLOG(ERROR) << "Failed to set thread priority";
     }
 
+    bool set_profiles = false;
     // Start serving IO
     while (true) {
         if (!block_server_->ProcessRequests()) {
             break;
+        }
+
+        // SetTaskProfile API should be invoked after boot is completed as
+        // cgroup setup wouldn't be done at the very early stage in the boot
+        // process.
+        if (!set_profiles && android::base::GetBoolProperty("sys.boot_completed", false)) {
+            if (!SetProfiles({"CPUSET_SP_DEFAULT"})) {
+                SNAP_LOG(ERROR) << "Failed to assign task profile to ReadWorker thread";
+            }
+            set_profiles = true;
         }
     }
 

@@ -17,6 +17,7 @@
 #include "snapuserd_readahead.h"
 
 #include <pthread.h>
+#include <sys/prctl.h>
 
 #include "android-base/properties.h"
 #include "snapuserd_core.h"
@@ -777,7 +778,8 @@ void ReadAhead::FinalizeIouring() {
 bool ReadAhead::RunThread() {
     SNAP_LOG(INFO) << "ReadAhead thread started.";
 
-    pthread_setname_np(pthread_self(), "ReadAhead");
+    std::string thread_name = "RA_" + misc_name_;
+    prctl(PR_SET_NAME, thread_name.c_str());
 
     if (!InitializeFds()) {
         return false;
@@ -797,14 +799,20 @@ bool ReadAhead::RunThread() {
         SNAP_PLOG(ERROR) << "Failed to set thread priority";
     }
 
-    if (!SetProfiles({"CPUSET_SP_BACKGROUND"})) {
-        SNAP_PLOG(ERROR) << "Failed to assign task profile to readahead thread";
-    }
+    SNAP_LOG(INFO) << "ReadAhead processing: " << thread_name;
 
-    SNAP_LOG(INFO) << "ReadAhead processing.";
+    bool set_profiles = false;
     while (!RAIterDone()) {
         if (!ReadAheadIOStart()) {
             break;
+        }
+
+        if (!set_profiles && android::base::GetBoolProperty("sys.boot_completed", false)) {
+            if (!SetProfiles({"CPUSET_SP_BACKGROUND"})) {
+                SNAP_LOG(ERROR) << "Failed to assign task profile to readahead thread: "
+                                << thread_name;
+            }
+            set_profiles = true;
         }
     }
 
