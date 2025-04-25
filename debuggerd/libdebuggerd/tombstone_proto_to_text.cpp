@@ -19,6 +19,7 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #include <algorithm>
 #include <functional>
@@ -453,11 +454,9 @@ static void print_main_thread(CallbackType callback, SymbolizeCallbackType symbo
     CBL("signal %d (%s), code %d (%s%s), fault addr %s", signal_info.number(),
         signal_info.name().c_str(), signal_info.code(), signal_info.code_name().c_str(),
         sender_desc.c_str(), fault_addr_desc.c_str());
-#ifdef SEGV_MTEAERR
     is_async_mte_crash = signal_info.number() == SIGSEGV && signal_info.code() == SEGV_MTEAERR;
     is_mte_crash = is_async_mte_crash ||
                    (signal_info.number() == SIGSEGV && signal_info.code() == SEGV_MTESERR);
-#endif
   }
 
   if (tombstone.causes_size() == 1) {
