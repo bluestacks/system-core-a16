@@ -253,6 +253,7 @@ cc_binary {
     shared_libs: [
         "libbase",
     ],
+    system_ext_specific: true,
     init_rc: ["userdata.alias.remove.rc"],
     cflags: [
         "-Werror",
