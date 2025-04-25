@@ -369,6 +369,7 @@ init_first_stage_cc_defaults {
     ],
 
     static_libs: [
+        "libapexd_flags",
         "libfs_avb",
         "libavf_cc_flags",
         "libfs_mgr",

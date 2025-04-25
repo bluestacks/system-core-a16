@@ -68,6 +68,7 @@
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <android/avf_cc_flags.h>
+#include <com_android_apex_flags.h>
 #include <fs_avb/fs_avb.h>
 #include <fs_mgr.h>
 #include <fs_mgr_overlayfs.h>
@@ -483,6 +484,10 @@ void SelinuxRestoreContext() {
     selinux_android_restorecon("/dev/block", SELINUX_ANDROID_RESTORECON_RECURSE);
     selinux_android_restorecon("/dev/dm-user", SELINUX_ANDROID_RESTORECON_RECURSE);
     selinux_android_restorecon("/dev/device-mapper", 0);
+
+    if constexpr (com::android::apex::flags::mount_before_data()) {
+        selinux_android_restorecon("/dev/loop-control", 0);
+    }
 
     selinux_android_restorecon("/apex", 0);
     selinux_android_restorecon("/bootstrap-apex", 0);

@@ -50,9 +50,11 @@
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/thread_annotations.h>
+#include <com_android_apex_flags.h>
 #include <fs_avb/fs_avb.h>
 #include <fs_mgr_vendor_overlay.h>
 #include <libavb/libavb.h>
+#include <libdm/loop_control.h>
 #include <libgsi/libgsi.h>
 #include <libsnapshot/snapshot.h>
 #include <logwrap/logwrap.h>
@@ -854,6 +856,22 @@ static void MountExtraFilesystems() {
 #undef CHECKCALL
 }
 
+static void InitExtraDevices() {
+    if constexpr (com::android::apex::flags::mount_before_data()) {
+        // Pre-create a bunch of loop devices to accelerate apexd later. This effectively overrides
+        // CONFIG_BLK_DEV_LOOP_MIN_COUNT. 128 loop devices should be enough for now because most
+        // devices have < 100 apexes.
+        constexpr int kMaxLoopDevices = 128;
+        // Fire off a thread to pre-create the loop devices to avoid blocking the init.
+        std::thread([]() {
+            dm::LoopControl loop_control;
+            for (int i = 0; i < kMaxLoopDevices; i++) {
+                (void)loop_control.Add(i);
+            }
+        }).detach();
+    }
+}
+
 static void RecordStageBoottimes(const boot_clock::time_point& second_stage_start_time) {
     int64_t first_stage_start_time_ns = -1;
     if (auto first_stage_start_time_str = getenv(kEnvFirstStageStartedAt);
@@ -1048,6 +1066,11 @@ int SecondStageMain(int argc, char** argv) {
     InstallSignalFdHandler(&epoll);
     InstallInitNotifier(&epoll);
     StartPropertyService(&property_fd);
+
+    // Initialize extra devices required during second stage init.
+    // This may spawn threads for background work. Hence, this should be after
+    // InstallSignalFdHandler() which needs to be called before spawning any threads.
+    InitExtraDevices();
 
     // If boot_timeout property has been set in a debug build, start the boot monitor
     if (GetBoolProperty("ro.debuggable", false)) {
