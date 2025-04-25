@@ -322,7 +322,7 @@ bool CowReader::PrepMergeOps() {
     if (reader_flag_ == ReaderFlags::USERSPACE_MERGE) {
         std::sort(other_ops.begin(), other_ops.end());
     } else {
-        std::sort(other_ops.begin(), other_ops.end(), std::greater<int>());
+        std::sort(other_ops.begin(), other_ops.end(), std::greater<uint32_t>());
     }
 
     merge_op_blocks.insert(merge_op_blocks.end(), other_ops.begin(), other_ops.end());
