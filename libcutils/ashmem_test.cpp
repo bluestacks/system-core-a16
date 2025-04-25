@@ -33,8 +33,8 @@
 
 using android::base::unique_fd;
 
-static void TestCreateRegion(size_t size, unique_fd &fd, int prot) {
-    fd = unique_fd(ashmem_create_region(nullptr, size));
+static void TestCreateRegion(size_t size, unique_fd &fd, int prot, const char *name=nullptr) {
+    fd = unique_fd(ashmem_create_region(name, size));
     ASSERT_TRUE(fd >= 0);
     ASSERT_TRUE(ashmem_valid(fd));
     ASSERT_EQ(size, static_cast<size_t>(ashmem_get_size_region(fd)));
@@ -317,6 +317,41 @@ TEST(AshmemTest, ForkMultiRegionTest) {
     }
 
     ASSERT_NO_FATAL_FAILURE(ForkMultiRegionTest(fds, nRegions, size));
+}
+
+// We don't run a similar test as part of the AshmemTestMemfdAshmemCompat tests, since the SET_NAME
+// ioctl is not supported.
+TEST(AshmemTest, SetNameKernelAccessTest) {
+    size_t pageSize = getpagesize();
+    // We use mmap to get a page-aligned area, since the smallest accessibility granule is a page.
+    // We also allocate 2 pages worth of virtual address space so that when we unmap the 2nd page
+    // we can be sure we've created a hole in the process' address space.
+    void *testArea = mmap(nullptr, 2 * pageSize, PROT_READ | PROT_WRITE,
+                          MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    ASSERT_NE(testArea, MAP_FAILED);
+
+    // Create a hole in the address space to catch accesses beyond the string from the kernel, which
+    // would cause TestCreateRegion() to fail.
+    char *secondPage = static_cast<char *>(testArea) + pageSize;
+    ASSERT_EQ(0, munmap(secondPage, pageSize));
+
+    // Write the name such that even if the implementation of the SET_NAME ioctl is always reading
+    // ASHMEM_NAME_LEN bytes, it is guaranteed to succeed given the start address of "test-buf".
+    char *name = secondPage - ASHMEM_NAME_LEN;
+    strcpy(name, "test-buf");
+
+    unique_fd fd;
+    ASSERT_NO_FATAL_FAILURE(TestCreateRegion(pageSize, fd, PROT_READ | PROT_WRITE, name));
+
+    unique_fd fd2;
+    // This should not fail either, as "est-buf" is also a valid string, but a broken
+    // implementation of the SET_NAME ioctl can blindly read ASHMEM_NAME_LEN bytes each time,
+    // instead of searching for the NUL terminating byte.
+    //
+    // If it fails, it's because the kernel accessed the unmapped region.
+    ASSERT_NO_FATAL_FAILURE(TestCreateRegion(pageSize, fd2, PROT_READ | PROT_WRITE, &name[1]));
+
+    ASSERT_EQ(0, munmap(testArea, pageSize));
 }
 
 class AshmemTestMemfdAshmemCompat : public ::testing::Test {
