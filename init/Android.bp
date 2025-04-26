@@ -80,7 +80,9 @@ init_device_sources = [
     "sigchld_handler.cpp",
     "snapuserd_transition.cpp",
     "switch_root.cpp",
+    "tradeinmode.cpp",
     "uevent_listener.cpp",
+    "uevent_dependency_graph.cpp",
     "ueventd.cpp",
     "ueventd_parser.cpp",
 ]
@@ -512,6 +514,8 @@ cc_test {
         "service_test.cpp",
         "subcontext_test.cpp",
         "tokenizer_test.cpp",
+        "uevent_dependency_graph.cpp",
+        "uevent_dependency_graph_test.cpp",
         "ueventd_parser_test.cpp",
         "ueventd_test.cpp",
         "util_test.cpp",

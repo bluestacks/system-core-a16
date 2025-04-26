@@ -116,13 +116,14 @@ on init
 
     # cpuctl hierarchy for devices using utilclamp
     mkdir /dev/cpuctl/foreground
-    mkdir /dev/cpuctl/foreground_window
     mkdir /dev/cpuctl/background
     mkdir /dev/cpuctl/top-app
     mkdir /dev/cpuctl/rt
     mkdir /dev/cpuctl/system
     mkdir /dev/cpuctl/system-background
     mkdir /dev/cpuctl/dex2oat
+    # move foreground_window to the bottom to preserve the original order
+    mkdir /dev/cpuctl/foreground_window
     chown system system /dev/cpuctl
     chown system system /dev/cpuctl/foreground
     chown system system /dev/cpuctl/foreground_window
@@ -313,9 +314,6 @@ on init
     mkdir /dev/cpuset/foreground
     copy /dev/cpuset/cpus /dev/cpuset/foreground/cpus
     copy /dev/cpuset/mems /dev/cpuset/foreground/mems
-    mkdir /dev/cpuset/foreground_window
-    copy /dev/cpuset/cpus /dev/cpuset/foreground_window/cpus
-    copy /dev/cpuset/mems /dev/cpuset/foreground_window/mems
     mkdir /dev/cpuset/background
     copy /dev/cpuset/cpus /dev/cpuset/background/cpus
     copy /dev/cpuset/mems /dev/cpuset/background/mems
@@ -335,6 +333,11 @@ on init
     mkdir /dev/cpuset/top-app
     copy /dev/cpuset/cpus /dev/cpuset/top-app/cpus
     copy /dev/cpuset/mems /dev/cpuset/top-app/mems
+
+    # move foreground_window to the bottom to preserve the original order
+    mkdir /dev/cpuset/foreground_window
+    copy /dev/cpuset/cpus /dev/cpuset/foreground_window/cpus
+    copy /dev/cpuset/mems /dev/cpuset/foreground_window/mems
 
     # create a cpuset for camera daemon processes
     mkdir /dev/cpuset/camera-daemon

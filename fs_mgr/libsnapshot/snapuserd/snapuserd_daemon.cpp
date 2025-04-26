@@ -37,8 +37,7 @@ DEFINE_bool(io_uring, false, "If true, io_uring feature is enabled");
 DEFINE_bool(o_direct, false, "If true, enable direct reads on source device");
 DEFINE_bool(skip_verification, false, "If true, skip verification of partitions");
 DEFINE_int32(cow_op_merge_size, 0, "number of operations to be processed at once");
-DEFINE_int32(worker_count, android::snapshot::kNumWorkerThreads,
-             "number of worker threads used to serve I/O requests to dm-user");
+DEFINE_int32(worker_count, 4, "number of worker threads used to serve I/O requests to dm-user");
 DEFINE_int32(verify_block_size, 1_MiB, "block sized used during verification of snapshots");
 DEFINE_int32(num_verify_threads, 3, "number of threads used during verification phase");
 
