@@ -708,15 +708,18 @@ TEST_F(LooperTest, RemoveMessage_WhenRemovingAllMessagesForHandler_ShouldRemoveT
     mLooper->sendMessage(handler, Message(MSG_TEST3));
     mLooper->removeMessages(handler);
 
-    constexpr int MIN_POLL_TIMEOUT_MS = 1;
-    int result = mLooper->pollOnce(MIN_POLL_TIMEOUT_MS);
+    StopWatch stopWatch("pollOnce");
+    int result = mLooper->pollOnce(0);
+    int32_t elapsedMillis = ns2ms(stopWatch.elapsedTime());
 
+    EXPECT_NEAR(0, elapsedMillis, TIMING_TOLERANCE_MS)
+            << "elapsed time should approx. zero because message was sent so looper was awoken";
     EXPECT_EQ(Looper::POLL_WAKE, result)
             << "pollOnce result should be Looper::POLL_WAKE because looper was awoken";
     EXPECT_EQ(size_t(0), handler->messages.size())
             << "no messages to handle";
 
-    result = mLooper->pollOnce(MIN_POLL_TIMEOUT_MS);
+    result = mLooper->pollOnce(0);
 
     EXPECT_EQ(Looper::POLL_TIMEOUT, result)
             << "pollOnce result should be Looper::POLL_TIMEOUT because there was nothing to do";
