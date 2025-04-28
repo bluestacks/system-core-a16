@@ -586,9 +586,7 @@ bool MergeWorker::InitializeIouring() {
 
     ring_ = std::make_unique<struct io_uring>();
 
-    int ret = io_uring_queue_init(queue_depth_, ring_.get(), 0);
-    if (ret) {
-        LOG(ERROR) << "Merge: io_uring_queue_init failed with ret: " << ret;
+    if (!InitializeUringForMerge(ring_.get(), queue_depth_)) {
         return false;
     }
 
