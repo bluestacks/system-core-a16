@@ -1226,6 +1226,10 @@ static Result<void> do_perform_apex_config(const BuiltinArguments& args) {
     if (access("/data/misc/apexdata", 0) == 0) {
         create_apex_data_dirs();
     }
+    constexpr const char* kApexInfolist = "/apex/apex-info-list.xml";
+    if (selinux_android_restorecon(kApexInfolist, 0) == -1) {
+        PLOG(FATAL) << "restorecon failed: " << kApexInfolist;
+    }
 
     MountNamespace current_mnt_ns = GetCurrentMountNamespace().value_or(NS_BOOTSTRAP);
     // We don't want to parse the same apexes twice in the same mount namespace.
