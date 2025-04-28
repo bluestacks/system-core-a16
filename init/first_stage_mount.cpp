@@ -35,6 +35,7 @@
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android/avf_cc_flags.h>
+#include <com_android_apex_flags.h>
 #include <fs_avb/fs_avb.h>
 #include <fs_mgr.h>
 #include <fs_mgr_dm_linear.h>
@@ -308,6 +309,11 @@ bool FirstStageMountVBootV2::InitDevices() {
             return false;
         }
     }
+
+    if constexpr (com::android::apex::flags::mount_before_data()) {
+        block_dev_init_.InitLoopDevices();
+    }
+
     return true;
 }
 
