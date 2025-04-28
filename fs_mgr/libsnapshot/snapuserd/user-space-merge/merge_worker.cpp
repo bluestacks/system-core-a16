@@ -284,7 +284,7 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                 // If there are no dependency, we can optimize this further by
                 // allowing parallel writes; but for now, just link all the SQ
                 // entries.
-                sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
+                sqe->flags |= (IOSQE_IO_LINK);
             }
 
             // Ring is full or no more COW ops to be merged in this batch
@@ -312,7 +312,7 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                             pending_sqe -= 1;
                             flush_required = false;
                             pending_ios_to_submit += 1;
-                            sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
+                            sqe->flags |= (IOSQE_IO_LINK);
                         }
                     } else {
                         flush_required = true;
@@ -578,9 +578,7 @@ bool MergeWorker::InitializeIouring() {
 
     ring_ = std::make_unique<struct io_uring>();
 
-    int ret = io_uring_queue_init(queue_depth_, ring_.get(), 0);
-    if (ret) {
-        LOG(ERROR) << "Merge: io_uring_queue_init failed with ret: " << ret;
+    if (!InitializeUringForMerge(ring_.get(), queue_depth_)) {
         return false;
     }
 
