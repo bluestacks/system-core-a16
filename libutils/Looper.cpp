@@ -216,18 +216,14 @@ int Looper::pollInner(int timeoutMillis) {
     mResponses.clear();
     mResponseIndex = 0;
 
+    // We are about to idle.
+    std::atomic_store_explicit(&mPolling, true, std::memory_order_relaxed);
+
     struct epoll_event eventItems[EPOLL_MAX_EVENTS];
-    int eventCount = 0;
-    // Poll if we need to wait or have requests that may have FD events.
-    if (timeoutMillis != 0 || mHasRequests) {
-        // We are about to idle.
-        std::atomic_store_explicit(&mPolling, true, std::memory_order_relaxed);
+    int eventCount = epoll_wait(mEpollFd.get(), eventItems, EPOLL_MAX_EVENTS, timeoutMillis);
 
-        eventCount = epoll_wait(mEpollFd.get(), eventItems, EPOLL_MAX_EVENTS, timeoutMillis);
-
-        // No longer idling.
-        std::atomic_store_explicit(&mPolling, false, std::memory_order_relaxed);
-    }
+    // No longer idling.
+    std::atomic_store_explicit(&mPolling, false, std::memory_order_relaxed);
 
     // Acquire lock.
     mLock.lock();
@@ -497,8 +493,6 @@ int Looper::addFd(int fd, int ident, int events, const sp<LooperCallback>& callb
             mRequests.emplace(seq, request);
             seq_it->second = seq;
         }
-
-        mHasRequests = !mRequests.empty();
     } // release lock
     return 1;
 }
@@ -566,7 +560,6 @@ int Looper::removeSequenceNumberLocked(SequenceNumber seq) {
     // updating the epoll set so that we avoid accidentally leaking callbacks.
     mRequests.erase(request_it);
     mSequenceNumberByFd.erase(fd);
-    mHasRequests = !mRequests.empty();
 
     int epollResult = epoll_ctl(mEpollFd.get(), EPOLL_CTL_DEL, fd, nullptr);
     if (epollResult < 0) {
