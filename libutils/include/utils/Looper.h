@@ -490,6 +490,15 @@ private:
     std::unordered_map<SequenceNumber, Request> mRequests;               // guarded by mLock
     std::unordered_map<int /*fd*/, SequenceNumber> mSequenceNumberByFd;  // guarded by mLock
 
+    // Whether mRequests has one or more elements.
+    // Volatile to allow the reader (looper thread) to read it while the writer (any thread)
+    // may be modifying it without acquiring a lock.
+    // This is safe because the looper thread uses this value to determine if it may skip
+    // epoll_wait() when there are no requests. If there is a race then it doesn't matter how the
+    // race is resolved because the worst case is we'll skip one epoll_wait() call but won't skip
+    // subsequent ones.
+    volatile bool mHasRequests;
+
     // The sequence number to use for the next fd that is added to the looper.
     // The sequence number 0 is reserved for the WakeEventFd.
     SequenceNumber mNextRequestSeq;  // guarded by mLock
