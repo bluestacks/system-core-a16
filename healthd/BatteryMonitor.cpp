@@ -19,6 +19,7 @@
 #include <healthd/healthd.h>
 #include <healthd/BatteryMonitor.h>
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -353,6 +354,30 @@ static T getIntField(const String8& path) {
     return value;
 }
 
+String8 sanitizeSerialNumber(const std::string& serial) {
+    String8 sanitized;
+    for (const auto& c : serial) {
+        if (isupper(c) || isdigit(c)) {
+            sanitized.appendFormat("%c", c);
+        } else if (islower(c)) {
+            sanitized.appendFormat("%c", toupper(c));
+        } else {
+            // Some devices return non-ASCII characters as part of the serial
+            // number. Handle these gracefully since VTS requires alphanumeric
+            // characters.
+            sanitized.appendFormat("%02X", (unsigned int)c);
+        }
+    }
+    return sanitized;
+}
+
+static String8 readSerialNumber(const String8& path) {
+    std::string unsanitized;
+    if (readFromFile(path, &unsanitized) <= 0) return {};
+
+    return sanitizeSerialNumber(unsanitized);
+}
+
 static bool isScopedPowerSupply(const char* name) {
     constexpr char kScopeDevice[] = "Device";
 
@@ -422,6 +447,11 @@ void BatteryMonitor::updateValues(void) {
     if (!mHealthdConfig->batteryFirstUsageDatePath.empty())
         ensureBatteryHealthData(mHealthInfo.get())->batteryFirstUsageSeconds =
                 getIntField<int64_t>(mHealthdConfig->batteryFirstUsageDatePath);
+
+    if (!mHealthdConfig->batterySerialPath.empty()) {
+        ensureBatteryHealthData(mHealthInfo.get())->batterySerialNumber =
+                readSerialNumber(mHealthdConfig->batterySerialPath);
+    }
 
     mHealthInfo->batteryTemperatureTenthsCelsius =
             mBatteryFixedTemperature ? mBatteryFixedTemperature
@@ -707,7 +737,9 @@ status_t BatteryMonitor::getProperty(int id, struct BatteryProperty *val) {
 }
 
 status_t BatteryMonitor::getSerialNumber(std::optional<std::string>* out) {
-    *out = std::nullopt;
+    if (!mHealthdConfig->batterySerialPath.empty()) {
+        *out = readSerialNumber(mHealthdConfig->batterySerialPath);
+    }
     return OK;
 }
 
@@ -976,6 +1008,12 @@ void BatteryMonitor::init(struct healthd_config *hc) {
                     if (access(path.c_str(), R_OK) == 0) mHealthdConfig->chargingPolicyPath = path;
                 }
 
+                if (mHealthdConfig->batterySerialPath.empty()) {
+                    path.clear();
+                    path.appendFormat("%s/%s/serial_number", POWER_SUPPLY_SYSFS_PATH, name);
+                    if (access(path.c_str(), R_OK) == 0) mHealthdConfig->batterySerialPath = path;
+                }
+
                 break;
 
             case ANDROID_POWER_SUPPLY_TYPE_UNKNOWN:
@@ -1038,6 +1076,8 @@ void BatteryMonitor::init(struct healthd_config *hc) {
             KLOG_WARNING(LOG_TAG, "chargingStatePath not found\n");
         if (mHealthdConfig->chargingPolicyPath.empty())
             KLOG_WARNING(LOG_TAG, "chargingPolicyPath not found\n");
+        if (mHealthdConfig->batterySerialPath.empty())
+            KLOG_WARNING(LOG_TAG, "batterySerialPath not found\n");
     }
 
     if (property_get("ro.boot.fake_battery", pval, NULL) > 0
