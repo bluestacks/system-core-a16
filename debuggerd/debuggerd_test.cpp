@@ -350,6 +350,52 @@ TEST_F(CrasherTest, smoke) {
   }
 }
 
+TEST_F(CrasherTest, fault_address_write) {
+#if defined(__riscv)
+  GTEST_SKIP() << "Showing fault type not supported on riscv until "
+                  "https://github.com/google/android-riscv64/issues/118 is fixed.";
+#endif
+
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess([]() { *reinterpret_cast<volatile char*>(0xdead) = '1'; });
+
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGSEGV);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result,
+               R"(signal 11 \(SIGSEGV\), code 1 \(SEGV_MAPERR\), fault addr 0x0+dead \(write\))");
+}
+
+TEST_F(CrasherTest, fault_address_read) {
+#if defined(__riscv)
+  GTEST_SKIP() << "Showing fault type not supported on riscv until "
+                  "https://github.com/google/android-riscv64/issues/118 is fixed.";
+#endif
+
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess([]() { volatile char value = *reinterpret_cast<volatile char*>(0xdead); });
+
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGSEGV);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result,
+               R"(signal 11 \(SIGSEGV\), code 1 \(SEGV_MAPERR\), fault addr 0x0+dead \(read\))");
+}
+
 TEST_F(CrasherTest, tagged_fault_addr) {
 #if !defined(__aarch64__)
   GTEST_SKIP() << "Requires aarch64";

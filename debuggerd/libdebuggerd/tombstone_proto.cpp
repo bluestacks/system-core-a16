@@ -66,10 +66,13 @@
 #include <procinfo/process.h>
 #include <unwindstack/AndroidUnwinder.h>
 #include <unwindstack/Error.h>
+#include <unwindstack/MachineArm.h>
+#include <unwindstack/MachineArm64.h>
+#include <unwindstack/MachineX86.h>
+#include <unwindstack/MachineX86_64.h>
 #include <unwindstack/MapInfo.h>
 #include <unwindstack/Maps.h>
 #include <unwindstack/Regs.h>
-#include <unwindstack/RegsArm64.h>
 
 #include "libdebuggerd/open_files_list.h"
 #include "libdebuggerd/utility.h"
@@ -583,13 +586,25 @@ static void dump_registers(unwindstack::AndroidUnwinder* unwinder,
     }
   });
 #if defined(__aarch64__)
-  uint64_t esr_value;
-  if (regs->GetPseudoRegister(unwindstack::Arm64Reg::ARM64_PREG_ESR, &esr_value)) {
-    Register esr;
-    esr.set_name("esr");
-    esr.set_u64(esr_value);
-    *thread.add_registers() = esr;
-  }
+  Register esr;
+  esr.set_name("esr");
+  esr.set_u64(regs->GetExtraRegister(unwindstack::Arm64Reg::ARM64_EXTRA_REG_ESR));
+  *thread.add_registers() = esr;
+#elif defined(__arm__)
+  Register error_code;
+  error_code.set_name("error_code");
+  error_code.set_u64(regs->GetExtraRegister(unwindstack::ArmReg::ARM_EXTRA_REG_ERROR_CODE));
+  *thread.add_registers() = error_code;
+#elif defined(__i386__)
+  Register err;
+  err.set_name("err");
+  err.set_u64(regs->GetExtraRegister(unwindstack::X86Reg::X86_EXTRA_REG_ERR));
+  *thread.add_registers() = err;
+#elif defined(__x86_64__)
+  Register err;
+  err.set_name("err");
+  err.set_u64(regs->GetExtraRegister(unwindstack::X86_64Reg::X86_64_EXTRA_REG_ERR));
+  *thread.add_registers() = err;
 #endif
 }
 
