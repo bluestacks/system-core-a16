@@ -99,14 +99,7 @@ class ReadAhead {
 
     uint64_t total_ra_blocks_completed_ = 0;
     bool read_ahead_async_ = false;
-    // Queue depth of 8 seems optimal. We don't want
-    // to have a huge depth as it may put more memory pressure
-    // on the kernel worker threads given that we use
-    // IOSQE_ASYNC flag - ASYNC flags can potentially
-    // result in EINTR; Since we don't restart
-    // syscalls and fallback to synchronous I/O, we
-    // don't want huge queue depth
-    int queue_depth_ = 8;
+    int queue_depth_ = 32;
     uint32_t cow_op_merge_size_;
     std::unique_ptr<struct io_uring> ring_;
 };
