@@ -19,6 +19,7 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #include <algorithm>
 #include <functional>
@@ -125,6 +126,16 @@ static void print_thread_header(CallbackType callback, const Tombstone& tombston
     CB(should_log, "pac_enabled_keys: %016" PRIx64 "%s", thread.pac_enabled_keys(),
        describe_pac_enabled_keys(thread.pac_enabled_keys()).c_str());
   }
+
+  if (tombstone.arch() == Architecture::ARM64) {
+    // See if the esr register exists.
+    for (const auto& reg : thread.registers()) {
+      if (reg.name() == "esr" && reg.u64() != 0U) {
+        CB(should_log, "esr: %016" PRIx64 " %s", reg.u64(), describe_esr(reg.u64()).c_str());
+        break;
+      }
+    }
+  }
 }
 
 static void print_register_row(CallbackType callback, int word_size,
@@ -152,7 +163,7 @@ static void print_thread_registers(CallbackType callback, const Tombstone& tombs
       break;
 
     case Architecture::ARM64:
-      special_registers = {"ip", "lr", "sp", "pc", "pst"};
+      special_registers = {"ip", "lr", "sp", "pc", "pst", "esr"};
       break;
 
     case Architecture::RISCV64:
@@ -174,7 +185,7 @@ static void print_thread_registers(CallbackType callback, const Tombstone& tombs
 
   for (const auto& reg : thread.registers()) {
     auto row = &current_row;
-    if (special_registers.count(reg.name()) == 1) {
+    if (special_registers.contains(reg.name())) {
       row = &special_row;
     }
 
@@ -189,7 +200,16 @@ static void print_thread_registers(CallbackType callback, const Tombstone& tombs
     print_register_row(callback, word_size, current_row, should_log);
   }
 
-  print_register_row(callback, word_size, special_row, should_log);
+  if (special_row.size() > column_count) {
+    std::vector<std::pair<std::string, uint64_t>> first_row(special_row.begin(),
+                                                            special_row.begin() + column_count);
+    std::vector<std::pair<std::string, uint64_t>> second_row(special_row.begin() + column_count,
+                                                             special_row.end());
+    print_register_row(callback, word_size, first_row, should_log);
+    print_register_row(callback, word_size, second_row, should_log);
+  } else {
+    print_register_row(callback, word_size, special_row, should_log);
+  }
 }
 
 static void print_backtrace(CallbackType callback, SymbolizeCallbackType symbolize,
@@ -453,11 +473,9 @@ static void print_main_thread(CallbackType callback, SymbolizeCallbackType symbo
     CBL("signal %d (%s), code %d (%s%s), fault addr %s", signal_info.number(),
         signal_info.name().c_str(), signal_info.code(), signal_info.code_name().c_str(),
         sender_desc.c_str(), fault_addr_desc.c_str());
-#ifdef SEGV_MTEAERR
     is_async_mte_crash = signal_info.number() == SIGSEGV && signal_info.code() == SEGV_MTEAERR;
     is_mte_crash = is_async_mte_crash ||
                    (signal_info.number() == SIGSEGV && signal_info.code() == SEGV_MTESERR);
-#endif
   }
 
   if (tombstone.causes_size() == 1) {

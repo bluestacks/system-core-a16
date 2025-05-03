@@ -69,6 +69,7 @@
 #include <unwindstack/MapInfo.h>
 #include <unwindstack/Maps.h>
 #include <unwindstack/Regs.h>
+#include <unwindstack/RegsArm64.h>
 
 #include "libdebuggerd/open_files_list.h"
 #include "libdebuggerd/utility.h"
@@ -581,6 +582,15 @@ static void dump_registers(unwindstack::AndroidUnwinder* unwinder,
       *thread.add_memory_dump() = std::move(dump);
     }
   });
+#if defined(__aarch64__)
+  uint64_t esr_value;
+  if (regs->GetPseudoRegister(unwindstack::Arm64Reg::ARM64_PREG_ESR, &esr_value)) {
+    Register esr;
+    esr.set_name("esr");
+    esr.set_u64(esr_value);
+    *thread.add_registers() = esr;
+  }
+#endif
 }
 
 static void dump_thread_backtrace(std::vector<unwindstack::FrameData>& frames, Thread& thread) {

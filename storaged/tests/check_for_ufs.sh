@@ -39,6 +39,7 @@
 readonly USING_UFS=0  # Must be 0 to indicate non-error
 readonly USING_EMMC=1
 readonly SETUP_ISSUE=2
+readonly INTERNAL_ERROR=3
 
 # All of these shell commands are assumed to be on the device.
 readonly REQUIRED_CMDS="find readlink sed"
@@ -50,11 +51,34 @@ userdata_block="UNSET"
 host0_path="UNSET"
 
 
+# The output of this script will be used by automated testing, and analyzed
+# at scale.  As such, we want to normalize the output, and try to just have
+# a single line to analyze.
+function exit_script() {
+  exit_code=$1
+  message="$2"
+
+  prefix=""
+  case ${exit_code} in
+    ${USING_UFS}) prefix="UFS Detected";;
+    ${USING_EMMC}) prefix="eMMC Detected";;
+    ${SETUP_ISSUE}) prefix="ERROR";;
+    ${INTERNAL_ERROR}) prefix="INTERNAL ERROR";;
+    *)
+      prefix="UNEXPECTED EXIT CODE (${exit_code})"
+      exit_code=${INTERNAL_ERROR}
+      ;;
+  esac
+
+  echo "${prefix}: ${message}"
+  exit ${exit_code}
+}
+
 # Exit in failure if we're non-root or lack commands this script needs.
 function check_setup() {
   if [ $(id -u) -ne 0 ]; then
-    echo "ERROR: Need to run as root."
-    exit ${SETUP_ISSUE}
+    msg="Need to run as root."
+    exit_script ${SETUP_ISSUE} "${msg}"
   fi
 
   # We explicitly check for these commands, because if we're missing any,
@@ -63,8 +87,8 @@ function check_setup() {
   local which_result=$?
 
   if [ ${which_result} -ne 0 ]; then
-    echo "ERROR: Missing at least one of the required binaries: ${REQUIRED_CMDS}"
-    exit ${SETUP_ISSUE}
+    msg="Missing at least one of the required binaries: ${REQUIRED_CMDS}"
+    exit_script ${SETUP_ISSUE} "${msg}"
   fi
 }
 
@@ -76,12 +100,10 @@ function set_userdata_block {
   local userdata_path=`readlink -e ${USERDATA_BY_NAME}`
   local readlink_result=$?
 
+  # If we fail this 'if', we'll leave our userdata_block as "UNSET".
   if [ ${readlink_result} -eq 0 ]; then
     # Remove the "/dev/block/" part.
     userdata_block=`echo ${userdata_path} | sed 's#/dev/block/##'`
-  else
-    echo "Warning: Unable to find ${USERDATA_BY_NAME}"
-    # We'll leave our userdata_block as "UNSET".
   fi
 }
 
@@ -92,9 +114,9 @@ function exit_if_userdata_block_is_emmc {
 
   case ${userdata_block} in
      mmc*)
-       echo "userdata block is ${userdata_block}"
-       echo "Using eMMC"
-       exit ${USING_EMMC} ;;
+       msg="userdata block is ${userdata_block}"
+       exit_script ${USING_EMMC} "${msg}"
+       ;;
   esac
 }
 
@@ -110,22 +132,20 @@ function set_host0_path_or_exit {
   host0_path=`find /sys/devices -name host0 -print -quit`
 
   if [ -z "${host0_path}" ]; then
-    echo "Cannot find host0 in /sys/devices."
-    echo "Using eMMC"
-    exit ${USING_EMMC}
+    msg="Cannot find host0 in /sys/devices."
+    exit_script ${USING_EMMC} "${msg}"
   fi
 }
 
 
-# Returning from this function means we think this is UFS.
-function exit_if_not_ufs {
+function check_for_userdata_block_in_host0_path {
   # Using globals host0_path and userdata_block
 
   if [ "${userdata_block}" == "UNSET" ]; then
     # It's odd we couldn't find the userdata block.  But since we found host0,
-    # we most likely are using UFS.  We've already printed out a warning about
-    # not finding userdata.  So we'll just call this good.
-    return 0
+    # we most likely are using UFS.
+    msg="Could not find ${USERDATA_BY_NAME}, but found host0"
+    exit_script ${USING_UFS} "${msg}"
   fi
 
   # We use -print -quit to make this slightly faster.
@@ -136,16 +156,16 @@ function exit_if_not_ufs {
   # (unexpected) error message of some sort.
   if [ ${find_result} -eq 0 ] && [ ! -z "${find_output}" ]; then
     # We've found our userdata within host0.  We're quite confident this is UFS.
-    return 0
+    msg="Found ${userdata_block} within host0"
+    exit_script ${USING_UFS} "${msg}"
   fi
 
-  echo "Warning: Could not find userdata ${userdata_block} within host0 path ${host0_path}"
   # While we found host0, which indicated UFS, it doesn't appear to be where
   # userdata is being used from.  We're honestly not sure if we're UFS or eMMC
   # here.  It seems worth failing here, to raise a flag on this (hopefully
   # unlikely) case.
-  echo "Assuming this is eMMC"
-  exit ${USING_EMMC}
+  msg="Couldn't find userdata ${userdata_block} within host0 path ${host0_path}"
+  exit_script ${USING_EMMC} "${msg}"
 }
 
 
@@ -155,9 +175,8 @@ set_userdata_block
 exit_if_userdata_block_is_emmc
 
 set_host0_path_or_exit
-exit_if_not_ufs
 
-# We made it through all our checks.
-echo "Using UFS"
-exit ${USING_UFS}
+# This function will exit, concluding either eMMC or UFS.
+check_for_userdata_block_in_host0_path
 
+exit_script ${INTERNAL_ERROR} "Unexpectedly at the end of the script file"
