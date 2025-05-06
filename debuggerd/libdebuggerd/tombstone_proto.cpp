@@ -32,6 +32,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/sysinfo.h>
+#include <sys/utsname.h>
 #include <time.h>
 
 #include <map>
@@ -876,6 +877,11 @@ void engrave_tombstone_proto(Tombstone* tombstone, unwindstack::AndroidUnwinder*
   result.set_build_fingerprint(android::base::GetProperty("ro.build.fingerprint", "unknown"));
   result.set_revision(android::base::GetProperty("ro.revision", "unknown"));
   result.set_timestamp(get_timestamp());
+
+  utsname buf;
+  if (uname(&buf) == 0) {
+    result.set_kernel_release(buf.release);
+  }
 
   const ThreadInfo& target_thread = threads.at(target_tid);
   result.set_pid(target_thread.pid);
