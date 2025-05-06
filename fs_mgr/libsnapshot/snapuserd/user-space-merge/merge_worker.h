@@ -46,8 +46,14 @@ class MergeWorker : public Worker {
     size_t ra_block_index_ = 0;
     uint64_t blocks_merged_in_group_ = 0;
     bool merge_async_ = false;
-    // TODO: This should be a tunable parameter
-    int queue_depth_ = 32;
+    // Queue depth of 8 seems optimal. We don't want
+    // to have a huge depth as it may put more memory pressure
+    // on the kernel worker threads given that we use
+    // IOSQE_ASYNC flag - ASYNC flags can potentially
+    // result in EINTR; Since we don't restart
+    // syscalls and fallback to synchronous I/O, we
+    // don't want huge queue depth
+    int queue_depth_ = 8;
     uint32_t cow_op_merge_size_ = 0;
 };
 

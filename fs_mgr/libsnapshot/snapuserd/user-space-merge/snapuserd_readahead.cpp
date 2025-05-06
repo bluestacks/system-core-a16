@@ -328,6 +328,7 @@ bool ReadAhead::ReadAheadAsyncIO() {
 
             pending_sqe -= 1;
             pending_ios_to_submit += 1;
+            sqe->flags |= IOSQE_ASYNC;
         }
 
         // pending_sqe == 0 : Ring is full
@@ -754,7 +755,9 @@ bool ReadAhead::InitializeIouring() {
 
     ring_ = std::make_unique<struct io_uring>();
 
-    if (!InitializeUringForMerge(ring_.get(), queue_depth_)) {
+    int ret = io_uring_queue_init(queue_depth_, ring_.get(), 0);
+    if (ret) {
+        SNAP_LOG(ERROR) << "io_uring_queue_init failed with ret: " << ret;
         return false;
     }
 
