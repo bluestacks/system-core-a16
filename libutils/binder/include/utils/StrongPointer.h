@@ -283,22 +283,8 @@ sp<T> sp<T>::cast(const sp<U>& other) {
 
 template<typename T>
 sp<T>::~sp() {
-    T* volatile* mPtrPtr = const_cast<T* volatile*>(&m_ptr);
-
-    if (m_ptr) {
+    if (m_ptr)
         m_ptr->decStrong(this);
-
-        // TODO: run this when m_ptr is null as well. This
-        // is not done due to appcompat concerns.
-        //
-        // detect when:
-        // - if m_ptr is changed on another thread, sometimes
-        // - if the destructor is run twice
-        //
-        // Value chosen to distinguish from other types of
-        // initialization, but it's still on the zero page.
-        *mPtrPtr = reinterpret_cast<T*>(0x17);
-    }
 }
 
 template<typename T>
