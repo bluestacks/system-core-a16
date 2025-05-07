@@ -633,6 +633,9 @@ bool tombstone_proto_to_text(const Tombstone& tombstone, CallbackType callback,
                              SymbolizeCallbackType symbolize) {
   CBL("*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***");
   CBL("Build fingerprint: '%s'", tombstone.build_fingerprint().c_str());
+  if (!tombstone.kernel_release().empty()) {
+    CBL("Kernel Release: '%s'", tombstone.kernel_release().c_str());
+  }
   CBL("Revision: '%s'", tombstone.revision().c_str());
   CBL("ABI: '%s'", abi_string(tombstone.arch()));
   if (tombstone.guest_arch() != Architecture::NONE) {

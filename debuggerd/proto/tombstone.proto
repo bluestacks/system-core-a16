@@ -64,6 +64,8 @@ message Tombstone {
   // Process uptime in seconds.
   uint32 process_uptime = 20;
 
+  string kernel_release = 28;
+
   Signal signal_info = 10;
   string abort_message = 14;
   repeated CrashDetail crash_details = 21;
@@ -80,7 +82,7 @@ message Tombstone {
 
   StackHistoryBuffer stack_history_buffer = 26;
 
-  reserved 28 to 999;
+  reserved 29 to 999;
 }
 
 enum Architecture {
