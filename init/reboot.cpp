@@ -381,90 +381,90 @@ static void KillAllProcesses() {
     WriteStringToFile("i", PROC_SYSRQ);
 }
 
-// Create reboot/shutdwon monitor thread
-void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target,
-                         sem_t* reboot_semaphore, std::chrono::milliseconds shutdown_timeout,
-                         bool* reboot_monitor_run) {
-    unsigned int remaining_shutdown_time = 0;
-
-    // 300 seconds more than the timeout passed to the thread as there is a final Umount pass
-    // after the timeout is reached.
+// Reboot/shutdown monitor thread
+static void RebootMonitorThread(unsigned int cmd) {
+    // We want quite a long timeout here since the "sync" in the calling
+    // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
+    constexpr unsigned int shutdown_watchdog_timeout_min = 60;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
-    remaining_shutdown_time = shutdown_watchdog_timeout + shutdown_timeout.count() / 1000;
 
-    while (*reboot_monitor_run == true) {
-        if (TEMP_FAILURE_RETRY(sem_wait(reboot_semaphore)) == -1) {
-            LOG(ERROR) << "sem_wait failed and exit RebootMonitorThread()";
-            return;
-        }
+    if (shutdown_watchdog_timeout < shutdown_watchdog_timeout_min) {
+        LOG(WARNING) << "ro.build.shutdown.watchdog.timeout = " << shutdown_watchdog_timeout
+                     << " is too small; bumping up to " << shutdown_watchdog_timeout_min;
+        shutdown_watchdog_timeout = shutdown_watchdog_timeout_min;
+    }
 
-        timespec shutdown_timeout_timespec;
-        if (clock_gettime(CLOCK_MONOTONIC, &shutdown_timeout_timespec) == -1) {
-            LOG(ERROR) << "clock_gettime() fail! exit RebootMonitorThread()";
-            return;
-        }
+    LOG(INFO) << "RebootMonitorThread started for " << shutdown_watchdog_timeout << "s";
+    std::chrono::duration timeout = std::chrono::seconds(shutdown_watchdog_timeout);
 
-        // If there are some remaining shutdown time left from previous round, we use
-        // remaining time here.
-        shutdown_timeout_timespec.tv_sec += remaining_shutdown_time;
+    constexpr unsigned int num_steps = 10;
+    std::chrono::duration sleep_amount =
+            std::chrono::duration_cast<std::chrono::milliseconds>(timeout) / num_steps;
 
-        LOG(INFO) << "shutdown_timeout_timespec.tv_sec: " << shutdown_timeout_timespec.tv_sec;
+    for (unsigned int i = 0; i < num_steps - 1; i++) {
+        std::this_thread::sleep_for(sleep_amount);
 
-        int sem_return = 0;
-        while ((sem_return = sem_timedwait_monotonic_np(reboot_semaphore,
-                                                        &shutdown_timeout_timespec)) == -1 &&
-               errno == EINTR) {
-        }
-
-        if (sem_return == -1) {
-            LOG(ERROR) << "Reboot thread timed out";
-
-            if (android::base::GetBoolProperty("ro.debuggable", false) == true) {
-                if (false) {
-                    // SEPolicy will block debuggerd from running and this is intentional.
-                    // But these lines are left to be enabled during debugging.
-                    LOG(INFO) << "Try to dump init process call trace:";
-                    const char* vdc_argv[] = {"/system/bin/debuggerd", "-b", "1"};
-                    int status;
-                    logwrap_fork_execvp(arraysize(vdc_argv), vdc_argv, &status, false, LOG_KLOG,
-                                        true, nullptr);
-                }
-                LOG(INFO) << "Show stack for all active CPU:";
-                WriteStringToFile("l", PROC_SYSRQ);
-
-                LOG(INFO) << "Show tasks that are in disk sleep(uninterruptable sleep), which are "
-                             "like "
-                             "blocked in mutex or hardware register access:";
-                WriteStringToFile("w", PROC_SYSRQ);
-            }
-
-            // In shutdown case,notify kernel to sync and umount fs to read-only before shutdown.
-            if (cmd == ANDROID_RB_POWEROFF || cmd == ANDROID_RB_THERMOFF) {
-                WriteStringToFile("s", PROC_SYSRQ);
-
-                WriteStringToFile("u", PROC_SYSRQ);
-
-                RebootSystem(cmd, reboot_target);
-            }
-
-            LOG(ERROR) << "Trigger crash at last!";
-            WriteStringToFile("c", PROC_SYSRQ);
+        // Print a message periodically as we're waiting so there is some
+        // warning in the logs if we're getting close to triggering. Use this
+        // as a chance to try to preserve data by using the "sync" and
+        // "force remount readonly" sysrq requests, both of which kick off
+        // background work and are non-blocking. We'll do "sync" most of the
+        // time and only do the more intrusive remount right before the last
+        // delay (to give it time to take effect).
+        LOG(WARNING) << "Reboot monitor still running, forced reboot in "
+                     << ((num_steps - i - 1) * sleep_amount.count()) << " ms";
+        if (i == num_steps - 2) {
+            WriteStringToFile("u", PROC_SYSRQ);
         } else {
-            timespec current_time_timespec;
-
-            if (clock_gettime(CLOCK_MONOTONIC, &current_time_timespec) == -1) {
-                LOG(ERROR) << "clock_gettime() fail! exit RebootMonitorThread()";
-                return;
-            }
-
-            remaining_shutdown_time =
-                    shutdown_timeout_timespec.tv_sec - current_time_timespec.tv_sec;
-
-            LOG(INFO) << "remaining_shutdown_time: " << remaining_shutdown_time;
+            WriteStringToFile("s", PROC_SYSRQ);
         }
     }
+    std::this_thread::sleep_for(sleep_amount);
+
+    LOG(ERROR) << "Reboot thread timed out";
+
+    if (android::base::GetBoolProperty("ro.debuggable", false) == true) {
+        if (false) {
+            // SEPolicy will block debuggerd from running and this is intentional.
+            // But these lines are left to be enabled during debugging.
+            LOG(INFO) << "Try to dump init process call trace:";
+            const char* vdc_argv[] = {"/system/bin/debuggerd", "-b", "1"};
+            int status;
+            logwrap_fork_execvp(arraysize(vdc_argv), vdc_argv, &status, false, LOG_KLOG, true,
+                                nullptr);
+        }
+        LOG(INFO) << "Show stack for all active CPU:";
+        WriteStringToFile("l", PROC_SYSRQ);
+
+        LOG(INFO) << "Show tasks that are in disk sleep(uninterruptable sleep), which are "
+                     "like "
+                     "blocked in mutex or hardware register access:";
+        WriteStringToFile("w", PROC_SYSRQ);
+    }
+
+    if (cmd == ANDROID_RB_POWEROFF || cmd == ANDROID_RB_THERMOFF) {
+        RebootSystem(cmd, "");
+    }
+
+    LOG(ERROR) << "Trigger crash at last!";
+    WriteStringToFile("c", PROC_SYSRQ);
+}
+
+// Create reboot/shutdown monitor thread
+static void StartRebootMonitorThread(unsigned int cmd) {
+    static std::atomic_flag started{};
+
+    // Only allow the monitor to be started once.
+    if (started.test_and_set(std::memory_order_acquire)) {
+        LOG(INFO) << "RebootMonitorThread already started";
+        return;
+    }
+
+    LOG(INFO) << "Starting RebootMonitorThread";
+    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd);
+    reboot_monitor_thread.detach();
 }
 
 static bool UmountDynamicPartitions(const std::vector<std::string>& dynamic_partitions) {
@@ -495,7 +495,7 @@ static bool UmountDynamicPartitions(const std::vector<std::string>& dynamic_part
  * return true when umount was successful. false when timed out.
  */
 static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
-                                   std::chrono::milliseconds timeout, sem_t* reboot_semaphore) {
+                                   std::chrono::milliseconds timeout) {
     Timer t;
     std::vector<MountEntry> block_devices;
     std::vector<MountEntry> emulated_devices;
@@ -552,17 +552,9 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
     }
 
     if (stat == UMOUNT_STAT_SUCCESS && run_fsck) {
-        LOG(INFO) << "Pause reboot monitor thread before fsck";
-        sem_post(reboot_semaphore);
-
-        // fsck part is excluded from timeout check. It only runs for user initiated shutdown
-        // and should not affect reboot time.
         for (auto& entry : block_devices) {
             entry.DoFsck();
         }
-
-        LOG(INFO) << "Resume reboot monitor thread after fsck";
-        sem_post(reboot_semaphore);
     }
     return stat;
 }
@@ -719,35 +711,25 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
 
     bool is_thermal_shutdown = cmd == ANDROID_RB_THERMOFF;
 
-    auto shutdown_timeout = 0ms;
+    auto clean_shutdown_timeout = 0ms;
     if (!SHUTDOWN_ZERO_TIMEOUT) {
-        constexpr unsigned int shutdown_timeout_default = 6;
-        constexpr unsigned int max_thermal_shutdown_timeout = 3;
-        auto shutdown_timeout_final = android::base::GetUintProperty("ro.build.shutdown_timeout",
-                                                                     shutdown_timeout_default);
-        if (is_thermal_shutdown && shutdown_timeout_final > max_thermal_shutdown_timeout) {
-            shutdown_timeout_final = max_thermal_shutdown_timeout;
+        constexpr unsigned int clean_shutdown_timeout_default = 6;
+        constexpr unsigned int max_clean_thermal_shutdown_timeout = 3;
+        constexpr unsigned int max_clean_shutdown_timeout = 10;
+        auto shutdown_timeout_final = android::base::GetUintProperty(
+                "ro.build.shutdown_timeout", clean_shutdown_timeout_default);
+        if (is_thermal_shutdown && shutdown_timeout_final > max_clean_thermal_shutdown_timeout) {
+            shutdown_timeout_final = max_clean_thermal_shutdown_timeout;
+        } else if (shutdown_timeout_final > max_clean_shutdown_timeout) {
+            LOG(WARNING) << "Shorten clean shutdown timeout from " << shutdown_timeout_final
+                         << " s to " << max_clean_shutdown_timeout << " s";
+            shutdown_timeout_final = max_clean_shutdown_timeout;
         }
-        shutdown_timeout = std::chrono::seconds(shutdown_timeout_final);
+        clean_shutdown_timeout = std::chrono::seconds(shutdown_timeout_final);
     }
-    LOG(INFO) << "Shutdown timeout: " << shutdown_timeout.count() << " ms";
+    LOG(INFO) << "Clean shutdown timeout: " << clean_shutdown_timeout.count() << " ms";
 
-    sem_t reboot_semaphore;
-    if (sem_init(&reboot_semaphore, false, 0) == -1) {
-        // These should never fail, but if they do, skip the graceful reboot and reboot immediately.
-        LOG(ERROR) << "sem_init() fail and RebootSystem() return!";
-        RebootSystem(cmd, reboot_target, reason);
-    }
-
-    // Start a thread to monitor init shutdown process
-    LOG(INFO) << "Create reboot monitor thread.";
-    bool reboot_monitor_run = true;
-    std::thread reboot_monitor_thread(&RebootMonitorThread, cmd, reboot_target, &reboot_semaphore,
-                                      shutdown_timeout, &reboot_monitor_run);
-    reboot_monitor_thread.detach();
-
-    // Start reboot monitor thread
-    sem_post(&reboot_semaphore);
+    StartRebootMonitorThread(cmd);
 
     // Ensure last reboot reason is reduced to canonical
     // alias reported in bootloader or system boot reason.
@@ -833,8 +815,8 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
 
     // optional shutdown step
     // 1. terminate all services except shutdown critical ones. wait for delay to finish
-    if (shutdown_timeout > 0ms) {
-        StopServicesAndLogViolations(stop_first, shutdown_timeout / 2, true /* SIGTERM */);
+    if (clean_shutdown_timeout > 0ms) {
+        StopServicesAndLogViolations(stop_first, clean_shutdown_timeout / 2, true /* SIGTERM */);
     }
     // Send SIGKILL to ones that didn't terminate cleanly.
     StopServicesAndLogViolations(stop_first, 0ms, false /* SIGKILL */);
@@ -870,8 +852,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     if (auto ret = UnmountAllApexes(); !ret.ok()) {
         LOG(ERROR) << ret.error();
     }
-    UmountStat stat =
-            TryUmountAndFsck(cmd, run_fsck, shutdown_timeout - t.duration(), &reboot_semaphore);
+    UmountStat stat = TryUmountAndFsck(cmd, run_fsck, clean_shutdown_timeout - t.duration());
     // Follow what linux shutdown is doing: one more sync with little bit delay
     {
         Timer sync_timer;
@@ -881,10 +862,6 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     }
     if (!is_thermal_shutdown) std::this_thread::sleep_for(100ms);
     LogShutdownTime(stat, &t);
-
-    // Send signal to terminate reboot monitor thread.
-    reboot_monitor_run = false;
-    sem_post(&reboot_semaphore);
 
     // Reboot regardless of umount status. If umount fails, fsck after reboot will fix it.
     std::string data_fs_type = GetDataFsType();
@@ -952,6 +929,20 @@ static bool CommandIsPresent(bootloader_message* boot) {
 
     memset(boot->command, 0, sizeof(boot->command));
     return false;
+}
+
+void HandleShutdownRequestedMessage(const std::string& command) {
+    int cmd;
+
+    if (command.starts_with("0thermal")) {
+        cmd = ANDROID_RB_THERMOFF;
+    } else if (command.starts_with("0")) {
+        cmd = ANDROID_RB_POWEROFF;
+    } else {
+        cmd = ANDROID_RB_RESTART2;
+    }
+
+    StartRebootMonitorThread(cmd);
 }
 
 void HandlePowerctlMessage(const std::string& command) {
