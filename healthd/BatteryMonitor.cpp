@@ -148,18 +148,6 @@ BatteryMonitor::BatteryMonitor()
 
 BatteryMonitor::~BatteryMonitor() {}
 
-HealthInfo_1_0 BatteryMonitor::getHealthInfo_1_0() const {
-    HealthInfo_1_0 health_info_1_0;
-    translateToHidl(*mHealthInfo, &health_info_1_0);
-    return health_info_1_0;
-}
-
-HealthInfo_2_0 BatteryMonitor::getHealthInfo_2_0() const {
-    HealthInfo_2_0 health_info_2_0;
-    translateToHidl(*mHealthInfo, &health_info_2_0);
-    return health_info_2_0;
-}
-
 HealthInfo_2_1 BatteryMonitor::getHealthInfo_2_1() const {
     HealthInfo_2_1 health_info_2_1;
     translateToHidl(*mHealthInfo, &health_info_2_1);
@@ -518,12 +506,19 @@ void BatteryMonitor::updateValues(void) {
                               mChargerNames[i].c_str());
             int ChargingCurrent = (access(path.c_str(), R_OK) == 0) ? getIntField(path) : 0;
 
+            int ChargingVoltage;
             path.clear();
             path.appendFormat("%s/%s/voltage_max", POWER_SUPPLY_SYSFS_PATH,
                               mChargerNames[i].c_str());
-
-            int ChargingVoltage =
-                    (access(path.c_str(), R_OK) == 0) ? getIntField(path) : DEFAULT_VBUS_VOLTAGE;
+            if (access(path.c_str(), R_OK) == 0) {
+                ChargingVoltage = getIntField(path);
+            } else {
+                path.clear();
+                path.appendFormat("%s/%s/voltage_max_design", POWER_SUPPLY_SYSFS_PATH,
+                                  mChargerNames[i].c_str());
+                ChargingVoltage = (access(path.c_str(), R_OK) == 0) ? getIntField(path)
+                                                                    : DEFAULT_VBUS_VOLTAGE;
+            }
 
             double power = ((double)ChargingCurrent / MILLION) *
                            ((double)ChargingVoltage / MILLION);

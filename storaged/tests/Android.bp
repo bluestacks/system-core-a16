@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
-#pragma once
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
 
-bool has_memfd_support();
-int __ashmem_open();
+filegroup {
+    name: "storaged_check_for_ufs_script",
+    srcs: ["check_for_ufs.sh"],
+}

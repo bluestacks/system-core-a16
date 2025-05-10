@@ -176,6 +176,16 @@ noinline void sigsegv_non_null() {
     *a = 42;
 }
 
+noinline void sigsegv_write() {
+  int* a = reinterpret_cast<int*>(0xdeadbeef);
+  *a = 10;
+}
+
+noinline void sigsegv_read() {
+  int* a = reinterpret_cast<int*>(0xdeadbeef);
+  int value = *a;
+}
+
 noinline void fprintf_null() {
     FILE* sneaky_null = nullptr;
     fprintf(sneaky_null, "oops");
@@ -230,6 +240,8 @@ static int usage() {
     fprintf(stderr, "  SIGSEGV               cause a SIGSEGV at address 0x0 (synonym: crash)\n");
     fprintf(stderr, "  SIGSEGV-non-null      cause a SIGSEGV at a non-zero address\n");
     fprintf(stderr, "  SIGSEGV-unmapped      mmap/munmap a region of memory and then attempt to access it\n");
+    fprintf(stderr, "  SIGSEGV-read          cause a SIGSEGV reading from a non-zero address\n");
+    fprintf(stderr, "  SIGSEGV-write         cause a SIGSEGV writing to a non-zero address\n");
     fprintf(stderr, "  SIGTRAP               cause a SIGTRAP\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  fprintf-NULL          pass a null pointer to fprintf\n");
@@ -295,6 +307,10 @@ noinline int do_action(const char* arg) {
     // Actions.
     if (!strcasecmp(arg, "SIGSEGV-non-null")) {
       sigsegv_non_null();
+    } else if (!strcasecmp(arg, "SIGSEGV-read")) {
+      sigsegv_read();
+    } else if (!strcasecmp(arg, "SIGSEGV-write")) {
+      sigsegv_write();
     } else if (!strcasecmp(arg, "smash-stack")) {
       volatile int len = 128;
       return smash_stack(&len);

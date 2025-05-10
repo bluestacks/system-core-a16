@@ -33,6 +33,7 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -348,6 +349,52 @@ TEST_F(CrasherTest, smoke) {
     ASSERT_MATCH(result, R"(pac_enabled_keys: 000000000000000f)"
                          R"( \(PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY, PR_PAC_APDBKEY\))");
   }
+}
+
+TEST_F(CrasherTest, fault_address_write) {
+#if defined(__riscv)
+  GTEST_SKIP() << "Showing fault type not supported on riscv until "
+                  "https://github.com/google/android-riscv64/issues/118 is fixed.";
+#endif
+
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess([]() { *reinterpret_cast<volatile char*>(0xdead) = '1'; });
+
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGSEGV);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result,
+               R"(signal 11 \(SIGSEGV\), code 1 \(SEGV_MAPERR\), fault addr 0x0+dead \(write\))");
+}
+
+TEST_F(CrasherTest, fault_address_read) {
+#if defined(__riscv)
+  GTEST_SKIP() << "Showing fault type not supported on riscv until "
+                  "https://github.com/google/android-riscv64/issues/118 is fixed.";
+#endif
+
+  int intercept_result;
+  unique_fd output_fd;
+  StartProcess([]() { volatile char value = *reinterpret_cast<volatile char*>(0xdead); });
+
+  StartIntercept(&output_fd);
+  FinishCrasher();
+  AssertDeath(SIGSEGV);
+  FinishIntercept(&intercept_result);
+
+  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+
+  std::string result;
+  ConsumeFd(std::move(output_fd), &result);
+  ASSERT_MATCH(result,
+               R"(signal 11 \(SIGSEGV\), code 1 \(SEGV_MAPERR\), fault addr 0x0+dead \(read\))");
 }
 
 TEST_F(CrasherTest, tagged_fault_addr) {
@@ -3152,10 +3199,18 @@ TEST_F(CrasherTest, verify_header) {
   ConsumeFd(std::move(output_fd), &result);
 
   std::string match_str = android::base::StringPrintf(
-      "Build fingerprint: '%s'\\nRevision: '%s'\\n",
-      android::base::GetProperty("ro.build.fingerprint", "unknown").c_str(),
-      android::base::GetProperty("ro.revision", "unknown").c_str());
+      "Build fingerprint: '%s'\n",
+      android::base::GetProperty("ro.build.fingerprint", "unknown").c_str());
+
+  utsname buf;
+  ASSERT_EQ(0, uname(&buf));
+  match_str += android::base::StringPrintf("Kernel Release: '%s'\n", buf.release);
+
+  match_str += android::base::StringPrintf(
+      "Revision: '%s'\n", android::base::GetProperty("ro.revision", "unknown").c_str());
+
   match_str += android::base::StringPrintf("ABI: '%s'\n", ABI_STRING);
+
   ASSERT_MATCH(result, match_str);
 }
 

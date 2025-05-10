@@ -371,6 +371,12 @@ void PropertyChanged(const std::string& name, const std::string& value) {
     // commands to be executed.
     if (name == "sys.powerctl") {
         trigger_shutdown(value);
+    } else if (name == "sys.shutdown.requested") {
+        // Higher layers send "sys.shutdown.requested" before they're ready to ask the init
+        // system to shutdown via the above "sys.powerctl". Use the early warning to start
+        // the watchdog so that if higher layers hang before setting "sys.powerctl" we
+        // don't end up hung.
+        HandleShutdownRequestedMessage(value);
     }
 
     if (property_triggers_enabled) {
@@ -1208,6 +1214,10 @@ int SecondStageMain(int argc, char** argv) {
         if (next_action_time != far_future) {
             epoll_timeout = std::chrono::ceil<std::chrono::milliseconds>(
                     std::max(next_action_time - boot_clock::now(), 0ns));
+        } else {
+            // If we are unlikely to do anything soon, release memory from the
+            // allocator.
+            mallopt(M_PURGE_ALL, 0);
         }
         auto epoll_result = epoll.Wait(epoll_timeout);
         if (!epoll_result.ok()) {

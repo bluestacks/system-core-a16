@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
+#include <libsnapshot/cow_format.h>
 #include <pthread.h>
-#include <sys/prctl.h>
 
 #include <android-base/properties.h>
-#include <libsnapshot/cow_format.h>
 
 #include "merge_worker.h"
 #include "snapuserd_core.h"
@@ -284,7 +283,7 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                 // If there are no dependency, we can optimize this further by
                 // allowing parallel writes; but for now, just link all the SQ
                 // entries.
-                sqe->flags |= (IOSQE_IO_LINK);
+                sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
             }
 
             // Ring is full or no more COW ops to be merged in this batch
@@ -312,7 +311,7 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                             pending_sqe -= 1;
                             flush_required = false;
                             pending_ios_to_submit += 1;
-                            sqe->flags |= (IOSQE_IO_LINK);
+                            sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
                         }
                     } else {
                         flush_required = true;
@@ -578,7 +577,9 @@ bool MergeWorker::InitializeIouring() {
 
     ring_ = std::make_unique<struct io_uring>();
 
-    if (!InitializeUringForMerge(ring_.get(), queue_depth_)) {
+    int ret = io_uring_queue_init(queue_depth_, ring_.get(), 0);
+    if (ret) {
+        LOG(ERROR) << "Merge: io_uring_queue_init failed with ret: " << ret;
         return false;
     }
 
@@ -597,8 +598,7 @@ void MergeWorker::FinalizeIouring() {
 bool MergeWorker::Run() {
     SNAP_LOG(DEBUG) << "Waiting for merge begin...";
 
-    std::string thread_name = "MergeWorker_" + misc_name_;
-    prctl(PR_SET_NAME, thread_name.c_str());
+    pthread_setname_np(pthread_self(), "MergeWorker");
 
     if (!snapuserd_->WaitForMergeBegin()) {
         return true;
@@ -611,10 +611,10 @@ bool MergeWorker::Run() {
     }
 
     if (!SetProfiles({"CPUSET_SP_BACKGROUND"})) {
-        SNAP_LOG(ERROR) << "Failed to assign task profile to Mergeworker thread";
+        SNAP_PLOG(ERROR) << "Failed to assign task profile to Mergeworker thread";
     }
 
-    SNAP_LOG(INFO) << "Merge starting: " << thread_name;
+    SNAP_LOG(INFO) << "Merge starting..";
 
     bufsink_.Initialize(PAYLOAD_BUFFER_SZ);
 
