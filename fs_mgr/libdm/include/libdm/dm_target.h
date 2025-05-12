@@ -146,6 +146,7 @@ class DmTargetVerity final : public DmTarget {
     void SetVerityMode(const std::string& mode);
     void IgnoreZeroBlocks();
     void CheckAtMostOnce();
+    void TryVerifyInTasklet();
 
     std::string name() const override { return "verity"; }
     std::string GetParameterString() const override;

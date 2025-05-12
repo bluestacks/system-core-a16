@@ -212,6 +212,24 @@ TEST_F(DmTest, DmVerityArgsAvb2) {
     EXPECT_EQ(target.GetParameterString(), expected);
 }
 
+TEST_F(DmTest, DmVerityArgsTryVerifyTasklet) {
+    std::string device = "/dev/block/platform/soc/1da4000.ufshc/by-name/vendor_a";
+    std::string algorithm = "sha1";
+    std::string digest = "4be7e823b8c40f7bd5c8ccd5123f0722c5baca21";
+    std::string salt = "cc99f81ecb9484220a003b0719ee59dcf9be7e5d";
+
+    DmTargetVerity target(0, 10000, 1, device, device, 4096, 4096, 125961, 125961, algorithm,
+                          digest, salt);
+    target.TryVerifyInTasklet();
+
+    std::string expected =
+            "1 /dev/block/platform/soc/1da4000.ufshc/by-name/vendor_a "
+            "/dev/block/platform/soc/1da4000.ufshc/by-name/vendor_a 4096 4096 125961 125961 sha1 "
+            "4be7e823b8c40f7bd5c8ccd5123f0722c5baca21 cc99f81ecb9484220a003b0719ee59dcf9be7e5d 1 "
+            "try_verify_in_tasklet";
+    EXPECT_EQ(target.GetParameterString(), expected);
+}
+
 TEST_F(DmTest, DmSnapshotArgs) {
     DmTargetSnapshot target1(0, 512, "base", "cow", SnapshotStorageMode::Persistent, 8);
     if (DmTargetSnapshot::ReportsOverflow("snapshot")) {
