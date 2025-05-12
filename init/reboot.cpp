@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define LOG_TAG "init"
+
 #include "reboot.h"
 
 #include <dirent.h>
@@ -50,6 +52,7 @@
 #include <android-base/unique_fd.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
+#include <cutils/klog.h>
 #include <fs_mgr.h>
 #include <libsnapshot/snapshot.h>
 #include <logwrap/logwrap.h>
@@ -517,7 +520,8 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
     }
     UmountStat stat = UmountPartitions(timeout - t.duration());
     if (stat != UMOUNT_STAT_SUCCESS) {
-        LOG(INFO) << "umount timeout, last resort, kill all and try";
+        // Do not delete: Critical log for reboot_fs_integrity_test.
+        KLOG_INFO(LOG_TAG, "umount timeout, last resort, kill all and try");
         if (DUMP_ON_UMOUNT_FAILURE) DumpUmountDebuggingInfo();
         // Since umount timedout, we will try to kill all processes
         // and do one more attempt to umount the partitions.
@@ -866,7 +870,8 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     // Reboot regardless of umount status. If umount fails, fsck after reboot will fix it.
     std::string data_fs_type = GetDataFsType();
     if (!data_fs_type.empty()) {
-        LOG(WARNING) << "Umount /data failed, try to use ioctl to shutdown";
+        // Do not delete: Critical log for reboot_fs_integrity_test.
+        KLOG_WARNING(LOG_TAG, "Umount /data failed, try to use ioctl to shutdown");
         if (data_fs_type == "f2fs") {
             uint32_t flag = F2FS_GOING_DOWN_FULLSYNC;
             unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
