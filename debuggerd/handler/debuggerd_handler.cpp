@@ -464,41 +464,61 @@ static int debuggerd_dispatch_pseudothread(void* arg) {
     fatal_errno("failed to create pipe");
   }
 
-  uint32_t version;
-  ssize_t expected;
+  // The crash data is sent in four parts:
+  //   part 1: uint32_t (version number)
+  //   part 2: siginfo_t
+  //   part 3: ucontext_t
+  // Static executable crash:
+  //   part 4: uintptr_t (abort message pointer)
+  // Dynamic executable crash:
+  //   part 4: debugger_process_info
+  //     where debugger_process_info starts with uintptr_t abort_msg
 
+  // Verify that the CrashInfo structure is aligned such that there is no space
+  // between the fields since the parts are sent without space and read directly
+  // into a CrashInfo structure.
+  static_assert(offsetof(CrashInfo, c.version) == 0);
+  static_assert(offsetof(CrashInfo, c.version) + sizeof(uint32_t) ==
+                offsetof(CrashInfo, c.siginfo));
+  static_assert(offsetof(CrashInfo, c.siginfo) + sizeof(siginfo_t) ==
+                offsetof(CrashInfo, c.ucontext));
+  static_assert(offsetof(CrashInfo, c.ucontext) + sizeof(ucontext_t) ==
+                offsetof(CrashInfo, c.abort_msg_address));
+
+  uint32_t version;
   // ucontext_t is absurdly large on AArch64, so piece it together manually with writev.
   struct iovec iovs[4] = {
       {.iov_base = &version, .iov_len = sizeof(version)},
       {.iov_base = thread_info->siginfo, .iov_len = sizeof(siginfo_t)},
       {.iov_base = thread_info->ucontext, .iov_len = sizeof(ucontext_t)},
   };
+  constexpr size_t kCurrentCrashInfoSize = sizeof(version) + sizeof(siginfo_t) + sizeof(ucontext_t);
 
-  constexpr size_t kHeaderSize = sizeof(version) + sizeof(siginfo_t) + sizeof(ucontext_t);
-
+  ssize_t expected;
   if (thread_info->process_info.fdsan_table) {
     // Dynamic executables always use version 4. There is no need to increment the version number if
     // the format changes, because the sender (linker) and receiver (crash_dump) are version locked.
     version = 4;
-    expected = sizeof(CrashInfoHeader) + sizeof(CrashInfoDataDynamic);
+    expected = sizeof(CrashInfo);
 
-    static_assert(sizeof(CrashInfoHeader) + sizeof(CrashInfoDataDynamic) ==
-                      kHeaderSize + sizeof(thread_info->process_info),
+    static_assert(sizeof(CrashInfo) == kCurrentCrashInfoSize + sizeof(thread_info->process_info),
                   "Wire protocol structs do not match the data sent.");
-#define ASSERT_SAME_OFFSET(MEMBER1, MEMBER2) \
-    static_assert(sizeof(CrashInfoHeader) + offsetof(CrashInfoDataDynamic, MEMBER1) == \
-                      kHeaderSize + offsetof(debugger_process_info, MEMBER2), \
-                  "Wire protocol offset does not match data sent: " #MEMBER1);
-    ASSERT_SAME_OFFSET(fdsan_table_address, fdsan_table);
-    ASSERT_SAME_OFFSET(gwp_asan_state, gwp_asan_state);
-    ASSERT_SAME_OFFSET(gwp_asan_metadata, gwp_asan_metadata);
-    ASSERT_SAME_OFFSET(scudo_stack_depot, scudo_stack_depot);
-    ASSERT_SAME_OFFSET(scudo_region_info, scudo_region_info);
-    ASSERT_SAME_OFFSET(scudo_ring_buffer, scudo_ring_buffer);
-    ASSERT_SAME_OFFSET(scudo_ring_buffer_size, scudo_ring_buffer_size);
-    ASSERT_SAME_OFFSET(scudo_stack_depot_size, scudo_stack_depot_size);
-    ASSERT_SAME_OFFSET(recoverable_crash, recoverable_crash);
-    ASSERT_SAME_OFFSET(crash_detail_page, crash_detail_page);
+#define ASSERT_SAME_OFFSET(MEMBER1, MEMBER2)                                          \
+  static_assert(offsetof(CrashInfo, MEMBER1) ==                                       \
+                    kCurrentCrashInfoSize + offsetof(debugger_process_info, MEMBER2), \
+                "Wire protocol offset does not match data sent: " #MEMBER1);
+    static_assert(offsetof(debugger_process_info, abort_msg) == 0,
+                  "abort_msg must be the first element in debugger_process_info");
+    ASSERT_SAME_OFFSET(d.fdsan_table_address, fdsan_table);
+    ASSERT_SAME_OFFSET(d.gwp_asan_state, gwp_asan_state);
+    ASSERT_SAME_OFFSET(d.gwp_asan_metadata, gwp_asan_metadata);
+    ASSERT_SAME_OFFSET(d.scudo_stack_depot, scudo_stack_depot);
+    ASSERT_SAME_OFFSET(d.scudo_region_info, scudo_region_info);
+    ASSERT_SAME_OFFSET(d.scudo_ring_buffer, scudo_ring_buffer);
+    ASSERT_SAME_OFFSET(d.scudo_ring_buffer_size, scudo_ring_buffer_size);
+    ASSERT_SAME_OFFSET(d.scudo_stack_depot_size, scudo_stack_depot_size);
+    ASSERT_SAME_OFFSET(d.recoverable_crash, recoverable_crash);
+    ASSERT_SAME_OFFSET(d.crash_detail_page, crash_detail_page);
 #undef ASSERT_SAME_OFFSET
 
     iovs[3] = {.iov_base = &thread_info->process_info,
@@ -506,11 +526,10 @@ static int debuggerd_dispatch_pseudothread(void* arg) {
   } else {
     // Static executables always use version 1.
     version = 1;
-    expected = sizeof(CrashInfoHeader) + sizeof(CrashInfoDataStatic);
+    expected = sizeof(CrashInfoDataCommon);
 
-    static_assert(
-        sizeof(CrashInfoHeader) + sizeof(CrashInfoDataStatic) == kHeaderSize + sizeof(uintptr_t),
-        "Wire protocol structs do not match the data sent.");
+    static_assert(sizeof(CrashInfoDataCommon) == kCurrentCrashInfoSize + sizeof(uintptr_t),
+                  "Wire protocol structs do not match the data sent.");
 
     iovs[3] = {.iov_base = &thread_info->process_info.abort_msg, .iov_len = sizeof(uintptr_t)};
   }
