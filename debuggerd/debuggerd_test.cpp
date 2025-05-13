@@ -24,6 +24,7 @@
 #include <malloc.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/capability.h>
@@ -282,6 +283,14 @@ void CrasherTest::FinishCrasher() {
   }
 }
 
+static std::string Signal2String(int signo) {
+  char str[SIG2STR_MAX];
+  if (sig2str(signo, str) == 0) {
+    return "SIG" + std::string(str);
+  }
+  return "Unknown";
+}
+
 void CrasherTest::AssertDeath(int signo) {
   int status;
   pid_t pid = TIMEOUT(30, waitpid(crasher_pid, &status, 0));
@@ -294,11 +303,12 @@ void CrasherTest::AssertDeath(int signo) {
 
   if (signo == 0) {
     ASSERT_TRUE(WIFEXITED(status)) << "Terminated due to unexpected signal " << WTERMSIG(status);
-    ASSERT_EQ(0, WEXITSTATUS(signo));
+    ASSERT_EQ(0, WEXITSTATUS(status));
   } else {
     ASSERT_FALSE(WIFEXITED(status));
     ASSERT_TRUE(WIFSIGNALED(status)) << "crasher didn't terminate via a signal";
-    ASSERT_EQ(signo, WTERMSIG(status));
+    ASSERT_EQ(signo, WTERMSIG(status)) << "Expected signal: " << Signal2String(signo)
+                                       << " real signal: " << Signal2String(WTERMSIG(status));
   }
   crasher_pid = -1;
 }
@@ -1515,8 +1525,13 @@ static void setup_jail(minijail* jail) {
   policy += "\nclone: 1";
   policy += "\nsigaltstack: 1";
   policy += "\nnanosleep: 1";
+  // fdsan can make a call to getrlimit
+#if defined(__LP64__)
   policy += "\ngetrlimit: 1";
+#else
+  // On 32-bit, getrlimit is implemented by the ugetrlimit syscall
   policy += "\nugetrlimit: 1";
+#endif
 
   FILE* tmp_file = tmpfile();
   if (!tmp_file) {
