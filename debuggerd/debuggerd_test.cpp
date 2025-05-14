@@ -1533,24 +1533,23 @@ static void setup_jail(minijail* jail) {
   policy += "\nugetrlimit: 1";
 #endif
 
-  FILE* tmp_file = tmpfile();
-  if (!tmp_file) {
-    PLOG(FATAL) << "tmpfile failed";
+  TemporaryFile tf;
+  if (tf.fd == -1) {
+    PLOG(FATAL) << "Cannot create tempory file " << tf.path;
   }
 
-  unique_fd tmp_fd(TEMP_FAILURE_RETRY(dup(fileno(tmp_file))));
-  if (!android::base::WriteStringToFd(policy, tmp_fd.get())) {
-    PLOG(FATAL) << "failed to write policy to tmpfile";
+  if (!android::base::WriteStringToFd(policy, tf.fd)) {
+    PLOG(FATAL) << "failed to write policy to temporary file " << tf.path;
   }
 
-  if (lseek(tmp_fd.get(), 0, SEEK_SET) != 0) {
-    PLOG(FATAL) << "failed to seek tmp_fd";
+  if (lseek(tf.fd, 0, SEEK_SET) != 0) {
+    PLOG(FATAL) << "failed to seek tf.fd";
   }
 
   minijail_no_new_privs(jail);
   minijail_log_seccomp_filter_failures(jail);
   minijail_use_seccomp_filter(jail);
-  minijail_parse_seccomp_filters_from_fd(jail, tmp_fd.release());
+  minijail_parse_seccomp_filters_from_fd(jail, tf.release());
 }
 
 static pid_t seccomp_fork_impl(void (*prejail)()) {
@@ -2636,8 +2635,8 @@ TEST_F(CrasherTest, unreadable_elf) {
   int intercept_result;
   unique_fd output_fd;
   std::string tmp_so_name;
-  StartProcess([&tmp_so_name]() {
-    TemporaryDir td;
+  TemporaryDir td;
+  StartProcess([&td, &tmp_so_name]() {
     if (!CopySharedLibrary(td.path, &tmp_so_name)) {
       _exit(1);
     }
@@ -2992,8 +2991,8 @@ static constexpr uint32_t kDexData[] = {
 };
 
 TEST_F(CrasherTest, verify_dex_pc_with_function_name) {
-  StartProcess([]() {
-    TemporaryDir td;
+  TemporaryDir td;
+  StartProcess([&td]() {
     std::string tmp_so_name;
     if (!CopySharedLibrary(td.path, &tmp_so_name)) {
       _exit(1);
