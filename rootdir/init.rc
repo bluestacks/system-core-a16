@@ -75,6 +75,10 @@ on early-init
     # Mount tracefs (with GID=AID_READTRACEFS)
     mount tracefs tracefs /sys/kernel/tracing gid=3012
 
+    # Run init_dev_config service to configure the device. For example, it
+    # may enable/disable APEXes by setting ro.boot.vendor.apex.* properties.
+    exec_start init_dev_config
+
     # Run apexd-bootstrap so that APEXes that provide critical libraries
     # become available. Note that this is executed as exec_start to ensure that
     # the libraries are available to the processes started after this statement.
