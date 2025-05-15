@@ -47,7 +47,8 @@ public class RebootFsIntegrityTest extends BaseHostJUnit4Test {
             "/sys/fs/pstore/console-ramoops"
     );
     private final List<String> mErrorPatterns = Arrays.asList(
-            "Umount /data failed, try to use ioctl to shutdown"
+            "Umount /data failed, try to use ioctl to shutdown",
+            "umount timeout, last resort, kill all and try"
     );
 
     @Before
