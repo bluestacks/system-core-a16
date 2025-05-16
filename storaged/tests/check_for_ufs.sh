@@ -40,10 +40,12 @@
 
 
 # Exit codes
+# LINT.IfChange
 readonly USING_UFS=0  # Must be 0 to indicate non-error
 readonly USING_EMMC=1
 readonly SETUP_ISSUE=2
 readonly INTERNAL_ERROR=3
+# LINT.ThenChange(//cts/hostsidetests/edi/src/android/edi/cts/StorageIoInterfaceDeviceInfo.java)
 
 # All of these shell commands are assumed to be on the device.
 readonly REQUIRED_CMDS="readlink sed"
@@ -75,7 +77,9 @@ function exit_script() {
       ;;
   esac
 
+  # LINT.IfChange
   echo "${prefix}: ${message}"
+  # LINT.ThenChange(//cts/hostsidetests/edi/src/android/edi/cts/StorageIoInterfaceDeviceInfo.java)
   exit ${exit_code}
 }
 
