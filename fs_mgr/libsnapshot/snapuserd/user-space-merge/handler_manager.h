@@ -146,7 +146,6 @@ class SnapshotHandlerManager final : public ISnapshotHandlerManager {
     int num_partitions_merge_complete_ = 0;
     std::queue<std::shared_ptr<HandlerThread>> merge_handlers_;
     android::base::unique_fd monitor_merge_event_fd_;
-    bool perform_verification_ = true;
 };
 
 }  // namespace snapshot

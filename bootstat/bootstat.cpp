@@ -1281,8 +1281,8 @@ void LogBootInfoToStatsd(std::chrono::milliseconds end_time,
   detail = (system_reason_parts.size() > 2) ? system_reason_parts[2] : "";
   android::util::bootstats::stats_write(
       android::util::bootstats::BOOT_SEQUENCE_REPORTED, reason.c_str(), system_reason.c_str(),
-      total_duration.count(), (int64_t)bootloader_duration_ms,
-      (int64_t)time_since_last_boot_sec * 1000, end_time.count(),
+      end_time.count(), total_duration.count(), (int64_t)bootloader_duration_ms,
+      (int64_t)time_since_last_boot_sec * 1000,
       main_reason.c_str(), sub_reason.c_str(), detail.c_str());
 }
 

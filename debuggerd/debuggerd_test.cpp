@@ -24,6 +24,7 @@
 #include <malloc.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/capability.h>
@@ -282,6 +283,14 @@ void CrasherTest::FinishCrasher() {
   }
 }
 
+static std::string Signal2String(int signo) {
+  char str[SIG2STR_MAX];
+  if (sig2str(signo, str) == 0) {
+    return "SIG" + std::string(str);
+  }
+  return "Unknown";
+}
+
 void CrasherTest::AssertDeath(int signo) {
   int status;
   pid_t pid = TIMEOUT(30, waitpid(crasher_pid, &status, 0));
@@ -294,11 +303,12 @@ void CrasherTest::AssertDeath(int signo) {
 
   if (signo == 0) {
     ASSERT_TRUE(WIFEXITED(status)) << "Terminated due to unexpected signal " << WTERMSIG(status);
-    ASSERT_EQ(0, WEXITSTATUS(signo));
+    ASSERT_EQ(0, WEXITSTATUS(status));
   } else {
     ASSERT_FALSE(WIFEXITED(status));
     ASSERT_TRUE(WIFSIGNALED(status)) << "crasher didn't terminate via a signal";
-    ASSERT_EQ(signo, WTERMSIG(status));
+    ASSERT_EQ(signo, WTERMSIG(status)) << "Expected signal: " << Signal2String(signo)
+                                       << " real signal: " << Signal2String(WTERMSIG(status));
   }
   crasher_pid = -1;
 }
@@ -1515,27 +1525,31 @@ static void setup_jail(minijail* jail) {
   policy += "\nclone: 1";
   policy += "\nsigaltstack: 1";
   policy += "\nnanosleep: 1";
+  // fdsan can make a call to getrlimit
+#if defined(__LP64__)
   policy += "\ngetrlimit: 1";
+#else
+  // On 32-bit, getrlimit is implemented by the ugetrlimit syscall
   policy += "\nugetrlimit: 1";
+#endif
 
-  FILE* tmp_file = tmpfile();
-  if (!tmp_file) {
-    PLOG(FATAL) << "tmpfile failed";
+  TemporaryFile tf;
+  if (tf.fd == -1) {
+    PLOG(FATAL) << "Cannot create tempory file " << tf.path;
   }
 
-  unique_fd tmp_fd(TEMP_FAILURE_RETRY(dup(fileno(tmp_file))));
-  if (!android::base::WriteStringToFd(policy, tmp_fd.get())) {
-    PLOG(FATAL) << "failed to write policy to tmpfile";
+  if (!android::base::WriteStringToFd(policy, tf.fd)) {
+    PLOG(FATAL) << "failed to write policy to temporary file " << tf.path;
   }
 
-  if (lseek(tmp_fd.get(), 0, SEEK_SET) != 0) {
-    PLOG(FATAL) << "failed to seek tmp_fd";
+  if (lseek(tf.fd, 0, SEEK_SET) != 0) {
+    PLOG(FATAL) << "failed to seek tf.fd";
   }
 
   minijail_no_new_privs(jail);
   minijail_log_seccomp_filter_failures(jail);
   minijail_use_seccomp_filter(jail);
-  minijail_parse_seccomp_filters_from_fd(jail, tmp_fd.release());
+  minijail_parse_seccomp_filters_from_fd(jail, tf.release());
 }
 
 static pid_t seccomp_fork_impl(void (*prejail)()) {
@@ -2621,8 +2635,8 @@ TEST_F(CrasherTest, unreadable_elf) {
   int intercept_result;
   unique_fd output_fd;
   std::string tmp_so_name;
-  StartProcess([&tmp_so_name]() {
-    TemporaryDir td;
+  TemporaryDir td;
+  StartProcess([&td, &tmp_so_name]() {
     if (!CopySharedLibrary(td.path, &tmp_so_name)) {
       _exit(1);
     }
@@ -2977,8 +2991,8 @@ static constexpr uint32_t kDexData[] = {
 };
 
 TEST_F(CrasherTest, verify_dex_pc_with_function_name) {
-  StartProcess([]() {
-    TemporaryDir td;
+  TemporaryDir td;
+  StartProcess([&td]() {
     std::string tmp_so_name;
     if (!CopySharedLibrary(td.path, &tmp_so_name)) {
       _exit(1);

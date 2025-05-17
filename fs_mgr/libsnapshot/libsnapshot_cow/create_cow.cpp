@@ -43,6 +43,7 @@ DEFINE_string(
 DEFINE_string(compression, "lz4",
               "Compression algorithm. Default is set to lz4. Available options: lz4, zstd, gz");
 DEFINE_bool(merkel_tree, false, "If true, source image hash is obtained from verity merkel tree");
+DEFINE_bool(inplace_copy_ops, false, "If true, inplace copy ops are added to the snapshot patch");
 
 namespace android {
 namespace snapshot {
@@ -58,7 +59,7 @@ class CreateSnapshot {
   public:
     CreateSnapshot(const std::string& src_file, const std::string& target_file,
                    const std::string& patch_file, const std::string& compression,
-                   const bool& merkel_tree);
+                   const bool& merkel_tree, const bool& inplace_copy_ops);
     bool CreateSnapshotPatch();
 
   private:
@@ -123,6 +124,7 @@ class CreateSnapshot {
     bool ParseSourceMerkelTree();
 
     bool use_merkel_tree_ = false;
+    bool allow_inplace_copy_ops_ = false;
     std::vector<uint8_t> target_salt_;
     std::vector<uint8_t> source_salt_;
 };
@@ -138,11 +140,12 @@ void CreateSnapshotLogger(android::base::LogId, android::base::LogSeverity sever
 
 CreateSnapshot::CreateSnapshot(const std::string& src_file, const std::string& target_file,
                                const std::string& patch_file, const std::string& compression,
-                               const bool& merkel_tree)
+                               const bool& merkel_tree, const bool& inplace_copy_ops)
     : src_file_(src_file),
       target_file_(target_file),
       patch_file_(patch_file),
-      use_merkel_tree_(merkel_tree) {
+      use_merkel_tree_(merkel_tree),
+      allow_inplace_copy_ops_(inplace_copy_ops) {
     if (!compression.empty()) {
         compression_ = compression;
     }
@@ -316,8 +319,8 @@ void CreateSnapshot::PrepareMergeBlock(const void* buffer, uint64_t block,
         auto iter = source_block_hash_.find(block_hash);
         if (iter != source_block_hash_.end()) {
             std::lock_guard<std::mutex> lock(write_lock_);
-            // In-place copy is skipped
-            if (block != iter->second) {
+            // In-place copy is skipped conditionally
+            if (allow_inplace_copy_ops_ || (block != iter->second)) {
                 copy_blocks_[block] = iter->second;
             } else {
                 in_place_ops_ += 1;
@@ -409,8 +412,12 @@ bool CreateSnapshot::WriteOrderedSnapshots() {
         in_degree[target] = 0;
         if (copy_blocks_.count(source)) {
             // this source block itself gets modified
-            dependency_graph[source].push_back(target);
-            in_degree[target]++;
+            // Only add a dependency if it's not a self-loop causing it.
+            // An X->X operation should not make X depend on itself in a way that forms a cycle.
+            if (source != target) {
+                dependency_graph[source].push_back(target);
+                in_degree[target]++;
+            }
         }
     }
 
@@ -444,10 +451,12 @@ bool CreateSnapshot::WriteOrderedSnapshots() {
         LOG(INFO) << "Cycle detected in copy operations! Converting some to replace.";
         std::unordered_set<uint64_t> safe_targets_(ordered_copy_ops_.begin(),
                                                    ordered_copy_ops_.end());
-        for (const auto& [target, source] : copy_blocks_) {
-            if (safe_targets_.find(target) == safe_targets_.end()) {
-                replace_blocks_.push_back(target);
-                copy_blocks_.erase(target);
+        for (auto it = copy_blocks_.begin(); it != copy_blocks_.end();) {
+            if (safe_targets_.find(it->first) == safe_targets_.end()) {
+                replace_blocks_.push_back(it->first);
+                it = copy_blocks_.erase(it);
+            } else {
+                ++it;
             }
         }
     }
@@ -643,6 +652,7 @@ SYNOPSIS
     target.img -> Target partition image
     compression -> compression algorithm. Default set to lz4. Supported types are gz, lz4, zstd.
     merkel_tree -> If true, source image hash is obtained from verity merkel tree.
+    inplace_copy_ops -> If true, inplace copy ops are added to the snapshot patch.
     output_dir -> Output directory to write the patch file to. Defaults to current working directory if not set.
 
 EXAMPLES
@@ -650,6 +660,7 @@ EXAMPLES
    $ create_snapshot $SOURCE_BUILD/system.img $TARGET_BUILD/system.img
    $ create_snapshot $SOURCE_BUILD/product.img $TARGET_BUILD/product.img --compression="zstd"
    $ create_snapshot $SOURCE_BUILD/product.img $TARGET_BUILD/product.img --merkel_tree --output_dir=/tmp/create_snapshot_output
+   $ create_snapshot $SOURCE_BUILD/product.img $TARGET_BUILD/product.img --inplace_copy_ops
 
 )";
 
@@ -675,7 +686,8 @@ int main(int argc, char* argv[]) {
         snapshotfile = FLAGS_output_dir + "/" + snapshotfile;
     }
     android::snapshot::CreateSnapshot snapshot(FLAGS_source, FLAGS_target, snapshotfile,
-                                               FLAGS_compression, FLAGS_merkel_tree);
+                                               FLAGS_compression, FLAGS_merkel_tree,
+                                               FLAGS_inplace_copy_ops);
 
     if (!snapshot.CreateSnapshotPatch()) {
         LOG(ERROR) << "Snapshot creation failed";
