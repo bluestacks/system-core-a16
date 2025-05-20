@@ -843,13 +843,16 @@ static void LoadPropertiesFromSecondStageRes(std::map<std::string, std::string>*
 // So we need to apply the same rule of build/make/tools/post_process_props.py
 // on runtime.
 static void update_sys_usb_config() {
-    bool is_debuggable = android::base::GetBoolProperty("ro.debuggable", false);
+    // emulators don't have USB, they enable adb another way.
+    const bool add_adb_func = android::base::GetBoolProperty("ro.debuggable", false) &&
+                              android::base::GetBoolProperty("ro.adb.has_usb", true);
+
     std::string config = android::base::GetProperty("persist.sys.usb.config", "");
     // b/150130503, add (config == "none") condition here to prevent appending
     // ",adb" if "none" is explicitly defined in default prop.
     if (config.empty() || config == "none") {
-        InitPropertySet("persist.sys.usb.config", is_debuggable ? "adb" : "none");
-    } else if (is_debuggable && config.find("adb") == std::string::npos &&
+        InitPropertySet("persist.sys.usb.config", add_adb_func ? "adb" : "none");
+    } else if (add_adb_func && config.find("adb") == std::string::npos &&
                config.length() + 4 < PROP_VALUE_MAX) {
         config.append(",adb");
         InitPropertySet("persist.sys.usb.config", config);
