@@ -245,5 +245,9 @@ bool SnapshotTestPropertyFetcher::GetBoolProperty(const std::string& key, bool d
     }
 }
 
+void SnapshotTestPropertyFetcher::SetProperty(const std::string& key, const std::string& value) {
+    properties_[key] = value;
+}
+
 }  // namespace snapshot
 }  // namespace android
