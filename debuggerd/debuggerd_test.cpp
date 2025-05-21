@@ -37,6 +37,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <regex>
 #include <set>
@@ -1666,14 +1667,16 @@ __attribute__((__noinline__)) extern "C" bool raise_debugger_signal(DebuggerdDum
   return true;
 }
 
-extern "C" void foo() {
+extern "C" void foo(std::atomic_bool& ready) {
   LOG(INFO) << "foo";
-  std::this_thread::sleep_for(1s);
+  ready = true;
+  std::this_thread::sleep_for(1000s);
 }
 
-extern "C" void bar() {
+extern "C" void bar(std::atomic_bool& ready) {
   LOG(INFO) << "bar";
-  std::this_thread::sleep_for(1s);
+  ready = true;
+  std::this_thread::sleep_for(1000s);
 }
 
 TEST_F(CrasherTest, seccomp_tombstone) {
@@ -1683,10 +1686,13 @@ TEST_F(CrasherTest, seccomp_tombstone) {
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         raise_debugger_signal(dump_type);
         _exit(0);
@@ -1739,10 +1745,13 @@ TEST_F(CrasherTest, seccomp_tombstone_multiple_threads_abort) {
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         std::thread abort_thread([] { abort(); });
         abort_thread.join();
@@ -1770,10 +1779,13 @@ TEST_F(CrasherTest, seccomp_backtrace) {
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         raise_debugger_signal(dump_type);
         _exit(0);
@@ -1800,10 +1812,13 @@ TEST_F(CrasherTest, seccomp_backtrace_from_thread) {
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         std::thread raise_thread([] {
           raise_debugger_signal(dump_type);
@@ -1845,10 +1860,13 @@ TEST_F(CrasherTest, seccomp_tombstone_no_allocation) {
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         // Disable allocations to verify that nothing in the fallback
         // signal handler does an allocation.
@@ -1878,10 +1896,13 @@ TEST_F(CrasherTest, seccomp_backtrace_no_allocation) {
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
-        std::thread a(foo);
-        std::thread b(bar);
+        std::atomic_bool foo_ready;
+        std::thread a([&foo_ready] { foo(foo_ready); });
+        std::atomic_bool bar_ready;
+        std::thread b([&bar_ready] { bar(bar_ready); });
 
-        std::this_thread::sleep_for(100ms);
+        while (!foo_ready || !bar_ready) {
+        }
 
         // Disable allocations to verify that nothing in the fallback
         // signal handler does an allocation.
