@@ -198,7 +198,6 @@ class CrasherTest : public ::testing::Test {
   void FinishIntercept(int* result);
 
   void StartProcess(std::function<void()> function, std::function<pid_t()> forker = fork);
-  void StartCrasher(const std::string& crash_type);
   void FinishCrasher();
   void AssertDeath(int signo);
 
