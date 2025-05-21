@@ -28,6 +28,7 @@
 #include <android-base/unique_fd.h>
 #include <com_android_apex_flags.h>
 
+#include "apex_init_util.h"
 #include "util.h"
 
 using android::base::GetBoolProperty;
@@ -89,19 +90,11 @@ bool NeedsTwoMountNamespaces() {
         if (IsMicrodroid()) return false;
 
         if constexpr (com::android::apex::flags::mount_before_data()) {
-            // For a launching device (>=37) with no compressed apexes, apexd-bootstrap can activate
-            // all apexes. Hence, we don't need two separate mount namespaces.
-            int product_first_api_level = GetIntProperty("ro.product.first_api_level", 0);
-            int build_version_sdk = GetIntProperty("ro.build.version.sdk", 0);
-            bool is_launching_device = product_first_api_level >= build_version_sdk;
-            if (is_launching_device && product_first_api_level >= 37) {
-                if (!GetBoolProperty("apexd.config.compressed_apex", true)) {
-                    return false;
-                }
+            // If apexd can mount APEXes before the data partition is ready, a single mount
+            // namespace is enough.
+            if (CanMountApexBeforeData()) {
+                return false;
             }
-            // Upgrade device falls back to the legacy two-round activation because there might be
-            // compressed apexes or downloaded apexes which require the data partition.
-            // TODO(b/381175707) Migrate upgrade devices with no compressed apexes.
         }
 
         return true;
