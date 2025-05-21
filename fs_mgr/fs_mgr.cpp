@@ -99,6 +99,7 @@
 
 using android::base::Basename;
 using android::base::GetBoolProperty;
+using android::base::GetIntProperty;
 using android::base::GetUintProperty;
 using android::base::make_scope_guard;
 using android::base::Realpath;
@@ -858,6 +859,8 @@ static int __mount(const std::string& source, const std::string& target, const F
     std::string checkpoint_opts;
     bool try_f2fs_gc_allowance = is_f2fs(entry.fs_type) && entry.fs_checkpoint_opts.length() > 0;
     bool try_f2fs_fallback = false;
+    bool try_f2fs_quota =
+            is_f2fs(entry.fs_type) && GetIntProperty("ro.product.first_api_level", -1) > 36;
     Timer t;
 
     do {
@@ -875,6 +878,9 @@ static int __mount(const std::string& source, const std::string& target, const F
             checkpoint_opts = "";
         }
         opts = entry.fs_options + checkpoint_opts;
+        if (try_f2fs_quota) {
+            opts += ",usrquota,grpquota,prjquota";
+        }
         if (save_errno == EAGAIN) {
             PINFO << "Retrying mount (source=" << source << ",target=" << target
                   << ",type=" << entry.fs_type << ", gc_allowance=" << gc_allowance << "%)=" << ret
