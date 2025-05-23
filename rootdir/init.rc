@@ -75,8 +75,7 @@ on early-init
     # Mount tracefs (with GID=AID_READTRACEFS)
     mount tracefs tracefs /sys/kernel/tracing gid=3012
 
-    # Run init_dev_config service to configure the device. For example, it
-    # may enable/disable APEXes by setting ro.boot.vendor.apex.* properties.
+    # Run the init_dev_config service to configure the device.
     exec_start init_dev_config
 
     # Run apexd-bootstrap so that APEXes that provide critical libraries
@@ -1303,6 +1302,18 @@ service ueventd /system/bin/ueventd
     seclabel u:r:ueventd:s0
     user root
     shutdown critical
+
+# This service takes care of early initialization of device configuration at
+# runtime, like per-SKU settings or sysprops. The service runs before apexd
+# bootstrap, which means it can also be used to perform conditional APEX
+# activation via selection sysprops (e.g. setting ro.boot.vendor.apex.*).
+# The 'ro.vendor.init_dev_config.path' sysprop should be configured at build
+# time via PRODUCT_VENDOR_PROPERTIES, and must point to a binary built with
+# bootstrap bionic and labeled as 'init_dev_config_exec'.
+service init_dev_config ${ro.vendor.init_dev_config.path}
+    oneshot
+    user system
+    seclabel u:r:init_dev_config:s0
 
 service console /system/bin/sh
     class core
