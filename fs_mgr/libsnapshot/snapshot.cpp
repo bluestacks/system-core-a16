@@ -43,6 +43,7 @@
 #include <libdm/dm.h>
 #include <libfiemap/image_manager.h>
 #include <liblp/liblp.h>
+#include <liblp/property_fetcher.h>
 
 #include <android/snapshot/snapshot.pb.h>
 #include <libsnapshot/snapshot_stats.h>
@@ -72,6 +73,7 @@ using android::fs_mgr::CreateLogicalPartition;
 using android::fs_mgr::CreateLogicalPartitionParams;
 using android::fs_mgr::GetPartitionGroupName;
 using android::fs_mgr::GetPartitionName;
+using android::fs_mgr::IPropertyFetcher;
 using android::fs_mgr::LpMetadata;
 using android::fs_mgr::MetadataBuilder;
 using android::fs_mgr::SlotNumberForSlotSuffix;
@@ -956,6 +958,11 @@ bool SnapshotManager::InitiateMerge() {
         return false;
     }
 
+    if (GetDebugFlag("block_merge_switchover")) {
+        LOG(INFO) << "Merge switchover blocked for testing.";
+        return true;
+    }
+
     auto reported_code = MergeFailureCode::Ok;
     for (const auto& snapshot : *merge_group) {
         // If this fails, we have no choice but to continue. Everything must
@@ -1372,38 +1379,51 @@ auto SnapshotManager::CheckTargetMergeState(LockedFile* lock, const std::string&
             return MergeResult(UpdateState::MergeFailed, MergeFailureCode::UnknownTargetType);
         }
 
-        // This is the case when device reboots during merge. Once the device boots,
-        // snapuserd daemon will not resume merge immediately in first stage init.
-        // This is slightly different as compared to dm-snapshot-merge; In this
-        // case, metadata file will have "MERGING" state whereas the daemon will be
-        // waiting to resume the merge. Thus, we resume the merge at this point.
-        if (merge_status == "snapshot" && snapshot_status.state() == SnapshotState::MERGING) {
-            if (!snapuserd_client_->InitiateMerge(name)) {
-                return MergeResult(UpdateState::MergeFailed, MergeFailureCode::UnknownTargetType);
-            }
-            return MergeResult(UpdateState::Merging);
-        }
-
-        if (merge_status == "snapshot" &&
-            DecideMergePhase(snapshot_status) == MergePhase::SECOND_PHASE) {
-            if (update_status.merge_phase() == MergePhase::FIRST_PHASE) {
-                // The snapshot is not being merged because it's in the wrong phase.
-                return MergeResult(UpdateState::None);
-            } else {
-                // update_status is already in second phase but the
-                // snapshot_status is still not set to SnapshotState::MERGING.
-                //
-                // Resume the merge at this point. see b/374225913
-                LOG(INFO) << "SwitchSnapshotToMerge: " << name << " after resuming merge";
-                auto code = SwitchSnapshotToMerge(lock, name);
-                if (code != MergeFailureCode::Ok) {
-                    LOG(ERROR) << "Failed to switch snapshot: " << name
-                               << " to merge during second phase";
+        if (merge_status == "snapshot") {
+            // This is the case when device reboots during merge. Once the device boots,
+            // snapuserd daemon will not resume merge immediately in first stage init.
+            // This is slightly different as compared to dm-snapshot-merge; In this
+            // case, metadata file will have "MERGING" state whereas the daemon will be
+            // waiting to resume the merge. Thus, we resume the merge at this point.
+            if (snapshot_status.state() == SnapshotState::MERGING) {
+                if (!snapuserd_client_->InitiateMerge(name)) {
                     return MergeResult(UpdateState::MergeFailed,
                                        MergeFailureCode::UnknownTargetType);
                 }
                 return MergeResult(UpdateState::Merging);
             }
+
+            auto intended_phase = DecideMergePhase(snapshot_status);
+            if (intended_phase == MergePhase::SECOND_PHASE &&
+                update_status.merge_phase() == MergePhase::FIRST_PHASE) {
+                // The snapshot is not being merged because it's in the wrong phase.
+                return MergeResult(UpdateState::None);
+            }
+
+            // The inverse of the above condition should never be true. We
+            // should not enter the next phase without completing the first
+            // phase.
+            if (intended_phase != update_status.merge_phase()) {
+                LOG(ERROR) << "Snapshot " << name << " is out of phase";
+                return MergeResult(UpdateState::MergeFailed, MergeFailureCode::IncorrectMergePhase);
+            }
+
+            if (GetDebugFlag("block_merge_switchover")) {
+                LOG(INFO) << "Delayed merge switchover blocked for testing.";
+                return MergeResult(UpdateState::Merging);
+            }
+
+            // Resume the merge at this point. see b/374225913. We were probably
+            // interrupted during a phase change.
+            LOG(INFO) << "SwitchSnapshotToMerge: " << name << " after resuming merge";
+
+            auto code = SwitchSnapshotToMerge(lock, name);
+            if (code != MergeFailureCode::Ok) {
+                LOG(ERROR) << "Failed to switch snapshot: " << name
+                           << " to merge during second phase";
+                return MergeResult(UpdateState::MergeFailed, MergeFailureCode::UnknownTargetType);
+            }
+            return MergeResult(UpdateState::Merging);
         }
 
         if (merge_status == "snapshot-merge") {
