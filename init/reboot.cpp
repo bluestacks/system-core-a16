@@ -592,7 +592,7 @@ static Result<void> KillZramBackingDevice() {
         return ErrnoError() << "Failed to read " << ZRAM_BACK_DEV;
     }
 
-    android::base::Trim(backing_dev);
+    backing_dev = android::base::Trim(backing_dev);
 
     if (android::base::StartsWith(backing_dev, "none")) {
         LOG(INFO) << "No zram backing device configured";
@@ -617,7 +617,7 @@ static Result<void> KillZramBackingDevice() {
         return ErrnoError() << "Failed to read " << ZRAM_BACK_DEV;
     }
 
-    android::base::Trim(backing_dev);
+    backing_dev = android::base::Trim(backing_dev);
 
     if (!android::base::StartsWith(backing_dev, "/dev/block/loop")) {
         LOG(INFO) << backing_dev << " is not a loop device. Exiting early";
