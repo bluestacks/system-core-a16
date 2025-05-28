@@ -391,9 +391,7 @@ static void RebootMonitorThread(unsigned int cmd, const Timer& shutdown_timer) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
-    // For microdroid, let watchdog timeout be arbitrary smaller because sync there wouldn't take
-    // that long.
-    constexpr unsigned int shutdown_watchdog_timeout_min = IsMicrodroid() ? 0 : 60;
+    constexpr unsigned int shutdown_watchdog_timeout_min = 60;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
 
