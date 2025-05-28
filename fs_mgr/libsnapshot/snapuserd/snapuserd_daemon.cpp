@@ -21,7 +21,6 @@
 #include <snapuserd/snapuserd_client.h>
 
 #include <storage_literals/storage_literals.h>
-#include "user-space-merge/snapuserd_core.h"
 
 #include "snapuserd_daemon.h"
 
