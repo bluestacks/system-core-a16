@@ -115,7 +115,7 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
     for (int i = arg_start; i < argc; i++) {
         auto parts = android::base::Split(argv[i], ",");
         if (parts.size() != 4) {
-            LOG(ERROR) << "Malformed message, expected at least four sub-arguments.";
+            LOG(ERROR) << "Malformed message, expected four sub-arguments.";
             return false;
         }
         HandlerOptions options = {
