@@ -207,8 +207,8 @@ static Result<void> CallVdc(const std::string& system, const std::string& cmd) {
     return Error() << "'/system/bin/vdc " << system << " " << cmd << "' failed : " << status;
 }
 
-static void LogShutdownTime(UmountStat stat, Timer* t) {
-    LOG(WARNING) << "powerctl_shutdown_time_ms:" << std::to_string(t->duration().count()) << ":"
+static void LogShutdownTime(UmountStat stat, const Timer& t) {
+    LOG(WARNING) << "powerctl_shutdown_time_ms:" << std::to_string(t.duration().count()) << ":"
                  << stat;
 }
 
@@ -867,7 +867,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         LOG(INFO) << "sync() after umount took" << sync_timer;
     }
     if (!is_thermal_shutdown) std::this_thread::sleep_for(100ms);
-    LogShutdownTime(stat, &t);
+    LogShutdownTime(stat, t);
 
     // Reboot regardless of umount status. If umount fails, fsck after reboot will fix it.
     std::string data_fs_type = GetDataFsType();
