@@ -21,6 +21,7 @@ cc_test_host {
     ],
 
     static_libs: [
+        "libfastboot",
         "libfastboot2",
         "libziparchive",
         "libsparse",
