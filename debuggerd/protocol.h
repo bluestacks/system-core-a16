@@ -72,6 +72,7 @@ enum class InterceptStatus : uint8_t {
   kFailed,
   kStarted,
   kRegistered,
+  kTimeout,
 };
 
 // Sent either immediately upon failure, or when the intercept has been used.

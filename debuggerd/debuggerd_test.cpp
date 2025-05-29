@@ -194,8 +194,9 @@ class CrasherTest : public ::testing::Test {
 
   void StartIntercept(unique_fd* output_fd, DebuggerdDumpType intercept_type = kDebuggerdTombstone);
 
-  // Returns -1 if we fail to read a response from tombstoned, otherwise the received return code.
-  void FinishIntercept(int* result);
+  ssize_t GetInterceptResponse(InterceptResponse& response);
+  // Asserts unless a kStarted response status is returned.
+  void FinishIntercept();
 
   void StartProcess(std::function<void()> function, std::function<pid_t()> forker = fork);
   void FinishCrasher();
@@ -235,20 +236,25 @@ void CrasherTest::StartIntercept(unique_fd* output_fd, DebuggerdDumpType interce
       << "Error message: " << response.error_message;
 }
 
-void CrasherTest::FinishIntercept(int* result) {
-  InterceptResponse response;
+ssize_t CrasherTest::GetInterceptResponse(InterceptResponse& response) {
+  return TIMEOUT(30, read(intercept_fd.get(), &response, sizeof(response)));
+}
 
-  ssize_t rc = TIMEOUT(30, read(intercept_fd.get(), &response, sizeof(response)));
+void CrasherTest::FinishIntercept() {
+  InterceptResponse response;
+  ssize_t rc = GetInterceptResponse(response);
   if (rc == -1) {
     FAIL() << "failed to read response from tombstoned: " << strerror(errno);
   } else if (rc == 0) {
-    *result = -1;
+    FAIL() << "tombstoned closed fd without a response";
   } else if (rc != sizeof(response)) {
     FAIL() << "received packet of unexpected length from tombstoned: expected " << sizeof(response)
            << ", received " << rc;
-  } else {
-    *result = response.status == InterceptStatus::kStarted ? 1 : 0;
+  } else if (response.status == InterceptStatus::kTimeout) {
+    FAIL() << "tombstoned timeout out waiting for process";
   }
+  ASSERT_EQ(InterceptStatus::kStarted, response.status)
+      << "tombstoned did not return expected result";
 }
 
 void CrasherTest::StartProcess(std::function<void()> function, std::function<pid_t()> forker) {
@@ -331,18 +337,15 @@ class LogcatCollector {
 };
 
 TEST_F(CrasherTest, smoke) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     *reinterpret_cast<volatile char*>(0xdead) = '1';
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -367,16 +370,13 @@ TEST_F(CrasherTest, fault_address_write) {
                   "https://github.com/google/android-riscv64/issues/118 is fixed.";
 #endif
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() { *reinterpret_cast<volatile char*>(0xdead) = '1'; });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -390,16 +390,13 @@ TEST_F(CrasherTest, fault_address_read) {
                   "https://github.com/google/android-riscv64/issues/118 is fixed.";
 #endif
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() { volatile char value = *reinterpret_cast<volatile char*>(0xdead); });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -413,18 +410,16 @@ TEST_F(CrasherTest, tagged_fault_addr) {
 #endif
   // HWASan crashes with SIGABRT on tag mismatch.
   SKIP_WITH_HWASAN;
-  int intercept_result;
-  unique_fd output_fd;
+
   StartProcess([]() {
     *reinterpret_cast<volatile char*>(0x100000000000dead) = '1';
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -448,13 +443,13 @@ TEST_F(CrasherTest, heap_addr_in_register) {
   // in the HWASan dump function, rather the faulting context. This is a known
   // issue.
   SKIP_WITH_HWASAN;
-  int intercept_result;
-  unique_fd output_fd;
+
   StartProcess([]() {
     // Crash with a heap pointer in the first argument register.
     Trap(malloc(1));
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   int status;
@@ -462,9 +457,7 @@ TEST_F(CrasherTest, heap_addr_in_register) {
   ASSERT_TRUE(WIFSIGNALED(status)) << "crasher didn't terminate via a signal";
   // Don't test the signal number because different architectures use different signals for
   // __builtin_trap().
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -494,6 +487,10 @@ static void SetTagCheckingLevelAsync() {
     abort();
   }
 }
+#else
+static void SetTagCheckingLevelSync() {}
+
+static void SetTagCheckingLevelAsync() {}
 #endif
 
 struct SizeParamCrasherTest : CrasherTest, testing::WithParamInterface<size_t> {};
@@ -501,7 +498,10 @@ struct SizeParamCrasherTest : CrasherTest, testing::WithParamInterface<size_t> {
 INSTANTIATE_TEST_SUITE_P(Sizes, SizeParamCrasherTest, testing::Values(0, 16, 131072));
 
 TEST_P(SizeParamCrasherTest, mte_uaf) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
@@ -511,10 +511,6 @@ TEST_P(SizeParamCrasherTest, mte_uaf) {
     return;
   }
 
-  LogcatCollector logcat_collector;
-
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile int* p = (volatile int*)malloc(GetParam());
@@ -522,15 +518,15 @@ TEST_P(SizeParamCrasherTest, mte_uaf) {
     p[0] = 42;
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::vector<std::string> log_sources(2);
   ConsumeFd(std::move(output_fd), &log_sources[0]);
+  LogcatCollector logcat_collector;
   logcat_collector.Collect(&log_sources[1]);
   // Tag dump only available in the tombstone, not logcat.
   ASSERT_MATCH(log_sources[0], "Memory tags around the fault address");
@@ -542,19 +538,17 @@ TEST_P(SizeParamCrasherTest, mte_uaf) {
     ASSERT_MATCH(result, R"(deallocated by thread .*?\n.*#00 pc)");
     ASSERT_MATCH(result, R"((^|\s)allocated by thread .*?\n.*#00 pc)");
   }
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_P(SizeParamCrasherTest, mte_oob_uaf) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile int* p = (volatile int*)malloc(GetParam());
@@ -562,47 +556,43 @@ TEST_P(SizeParamCrasherTest, mte_oob_uaf) {
     p[-1] = 42;
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
 
   ASSERT_MATCH(result, R"(signal 11 \(SIGSEGV\))");
   ASSERT_NOT_MATCH(result, R"(Cause: \[MTE\]: Use After Free, 4 bytes left)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_P(SizeParamCrasherTest, mte_overflow) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  LogcatCollector logcat_collector;
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile char* p = (volatile char*)malloc(GetParam());
     p[GetParam()] = 42;
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::vector<std::string> log_sources(2);
   ConsumeFd(std::move(output_fd), &log_sources[0]);
+  LogcatCollector logcat_collector;
   logcat_collector.Collect(&log_sources[1]);
 
   // Tag dump only in tombstone, not logcat, and tagging is not used for
@@ -617,31 +607,28 @@ TEST_P(SizeParamCrasherTest, mte_overflow) {
                              std::to_string(GetParam()) + R"(-byte allocation)");
     ASSERT_MATCH(result, R"((^|\s)allocated by thread .*?\n.*#00 pc)");
   }
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_P(SizeParamCrasherTest, mte_underflow) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile int* p = (volatile int*)malloc(GetParam());
     p[-1] = 42;
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -652,9 +639,6 @@ TEST_P(SizeParamCrasherTest, mte_underflow) {
   ASSERT_MATCH(result, R"((^|\s)allocated by thread .*
       #00 pc)");
   ASSERT_MATCH(result, "Memory tags around the fault address");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 __attribute__((noinline)) void mte_illegal_setjmp_helper(jmp_buf& jump_buf) {
@@ -666,19 +650,20 @@ __attribute__((noinline)) void mte_illegal_setjmp_helper(jmp_buf& jump_buf) {
 }
 
 TEST_F(CrasherTest, DISABLED_mte_illegal_setjmp) {
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   // This setjmp is illegal because it jumps back into a function that already returned.
   // Quoting man 3 setjmp:
   //     If the function which called setjmp() returns before longjmp() is
   //     called, the behavior is undefined.  Some kind of subtle or
   //     unsubtle chaos is sure to result.
   // https://man7.org/linux/man-pages/man3/longjmp.3.html
-#if defined(__aarch64__)
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     jmp_buf jump_buf;
@@ -686,12 +671,11 @@ TEST_F(CrasherTest, DISABLED_mte_illegal_setjmp) {
     longjmp(jump_buf, 1);
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -700,18 +684,17 @@ TEST_F(CrasherTest, DISABLED_mte_illegal_setjmp) {
   // interpreted as unsigned integer, and thus is "too large".
   // TODO(fmayer): fix the error message for this
   ASSERT_MATCH(result, R"(memtag_handle_longjmp: stack adjustment too large)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, mte_async) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
   unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelAsync();
@@ -722,29 +705,23 @@ TEST_F(CrasherTest, mte_async) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
 
   ASSERT_MATCH(result, R"(signal 11 \(SIGSEGV\), code [89] \(SEGV_MTE[AS]ERR\), fault addr)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, mte_multiple_causes) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  LogcatCollector logcat_collector;
-
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     SetTagCheckingLevelSync();
 
@@ -768,15 +745,15 @@ TEST_F(CrasherTest, mte_multiple_causes) {
     }
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::vector<std::string> log_sources(2);
   ConsumeFd(std::move(output_fd), &log_sources[0]);
+  LogcatCollector logcat_collector;
   logcat_collector.Collect(&log_sources[1]);
 
   // Tag dump only in the tombstone, not logcat.
@@ -795,9 +772,6 @@ TEST_F(CrasherTest, mte_multiple_causes) {
         result,
         R"((^|\s)allocated by thread .*?\n.*#00 pc(.|\n)*?(^|\s)allocated by thread .*?\n.*#00 pc)");
   }
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 #if defined(__aarch64__)
@@ -819,27 +793,31 @@ static uintptr_t CreateTagMapping() {
   }
   return mapping_uptr + page_size;
 }
+#else
+static uintptr_t CreateTagMapping() {
+  return 0;
+}
 #endif
 
 TEST_F(CrasherTest, mte_register_tag_dump) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     Trap(reinterpret_cast<void *>(CreateTagMapping()));
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -849,62 +827,56 @@ TEST_F(CrasherTest, mte_register_tag_dump) {
 .*
     01.............0 0000000000000000 0000000000000000  ................
     00.............0)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, mte_fault_tag_dump_front_truncated) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile char* p = reinterpret_cast<char*>(CreateTagMapping());
     p[0] = 0;  // Untagged pointer, tagged memory.
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
 
   ASSERT_MATCH(result, R"(Memory tags around the fault address.*
 \s*=>0x[0-9a-f]+000:\[1\] 0  1  0)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, mte_fault_tag_dump) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     volatile char* p = reinterpret_cast<char*>(CreateTagMapping());
     p[320] = 0;  // Untagged pointer, tagged memory.
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -914,19 +886,17 @@ TEST_F(CrasherTest, mte_fault_tag_dump) {
 \s*=>0x[0-9a-f]+: 1  0  1  0 \[1\] 0  1  0  1  0  1  0  1  0  1  0
 \s*0x[0-9a-f]+: 1  0  1  0  1  0  1  0  1  0  1  0  1  0  1  0
 )");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, mte_fault_tag_dump_rear_truncated) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&]() {
     SetTagCheckingLevelSync();
     size_t page_size = getpagesize();
@@ -934,12 +904,11 @@ TEST_F(CrasherTest, mte_fault_tag_dump_rear_truncated) {
     p[page_size - kTagGranuleSize * 2] = 0;  // Untagged pointer, tagged memory.
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -950,25 +919,19 @@ TEST_F(CrasherTest, mte_fault_tag_dump_rear_truncated) {
 \s*=>0x[0-9a-f]+: 1  0  1  0  1  0  1  0  1  0  1  0  1  0 \[1\] 0
 
 )");  // Ensure truncation happened and there's a newline after the tag fault.
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, LD_PRELOAD) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     setenv("LD_PRELOAD", "nonexistent.so", 1);
     *reinterpret_cast<volatile char*>(0xdead) = '1';
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -976,17 +939,15 @@ TEST_F(CrasherTest, LD_PRELOAD) {
 }
 
 TEST_F(CrasherTest, abort) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -994,21 +955,19 @@ TEST_F(CrasherTest, abort) {
 }
 
 TEST_F(CrasherTest, signal) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     while (true) {
       sleep(1);
     }
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   ASSERT_EQ(0, kill(crasher_pid, SIGSEGV));
 
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1019,8 +978,6 @@ TEST_F(CrasherTest, signal) {
 }
 
 TEST_F(CrasherTest, abort_message) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     // Arrived at experimentally;
     // logd truncates at 4062.
@@ -1032,12 +989,12 @@ TEST_F(CrasherTest, abort_message) {
     android_set_abort_message(buf);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1054,18 +1011,16 @@ inline crash_detail_t* _Nullable android_register_crash_detail_strs(const char* 
 }
 
 TEST_F(CrasherTest, crash_detail_single) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_register_crash_detail_strs("CRASH_DETAIL_NAME", g_crash_detail_value);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1073,19 +1028,17 @@ TEST_F(CrasherTest, crash_detail_single) {
 }
 
 TEST_F(CrasherTest, crash_detail_replace_data) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     auto *cd = android_register_crash_detail_strs("CRASH_DETAIL_NAME", "original_data");
     android_crash_detail_replace_data(cd, "new_data", strlen("new_data"));
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1096,19 +1049,17 @@ TEST_F(CrasherTest, crash_detail_replace_data) {
 }
 
 TEST_F(CrasherTest, crash_detail_replace_name) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     auto *cd = android_register_crash_detail_strs("old_name", g_crash_detail_value);
     android_crash_detail_replace_name(cd, "new_name", strlen("new_name"));
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1119,39 +1070,34 @@ TEST_F(CrasherTest, crash_detail_replace_name) {
 }
 
 TEST_F(CrasherTest, crash_detail_single_byte_name) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_register_crash_detail_strs("CRASH_DETAIL_NAME\1", g_crash_detail_value);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_MATCH(result, R"(CRASH_DETAIL_NAME\\1: 'crash_detail_value')");
 }
 
-
 TEST_F(CrasherTest, crash_detail_single_bytes) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_crash_detail_register("CRASH_DETAIL_NAME", strlen("CRASH_DETAIL_NAME"), "\1",
                                   sizeof("\1"));
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1159,19 +1105,17 @@ TEST_F(CrasherTest, crash_detail_single_bytes) {
 }
 
 TEST_F(CrasherTest, crash_detail_mixed) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     const char data[] = "helloworld\1\255\3";
     android_register_crash_detail_strs("CRASH_DETAIL_NAME", data);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1179,8 +1123,6 @@ TEST_F(CrasherTest, crash_detail_mixed) {
 }
 
 TEST_F(CrasherTest, crash_detail_many) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     for (int i = 0; i < 1000; ++i) {
       std::string name = "CRASH_DETAIL_NAME" + std::to_string(i);
@@ -1193,12 +1135,12 @@ TEST_F(CrasherTest, crash_detail_many) {
     android_register_crash_detail_strs("FINAL_NAME2", "FINAL_VALUE2");
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1209,19 +1151,17 @@ TEST_F(CrasherTest, crash_detail_many) {
 }
 
 TEST_F(CrasherTest, crash_detail_single_changes) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_register_crash_detail_strs("CRASH_DETAIL_NAME", g_crash_detail_value_changes);
     g_crash_detail_value_changes[0] = 'C';
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1229,19 +1169,17 @@ TEST_F(CrasherTest, crash_detail_single_changes) {
 }
 
 TEST_F(CrasherTest, crash_detail_multiple) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_register_crash_detail_strs("CRASH_DETAIL_NAME", g_crash_detail_value);
     android_register_crash_detail_strs("CRASH_DETAIL_NAME2", g_crash_detail_value2);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1250,20 +1188,18 @@ TEST_F(CrasherTest, crash_detail_multiple) {
 }
 
 TEST_F(CrasherTest, crash_detail_remove) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     auto* detail1 = android_register_crash_detail_strs("CRASH_DETAIL_NAME", g_crash_detail_value);
     android_crash_detail_unregister(detail1);
     android_register_crash_detail_strs("CRASH_DETAIL_NAME2", g_crash_detail_value2);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1272,18 +1208,16 @@ TEST_F(CrasherTest, crash_detail_remove) {
 }
 
 TEST_F(CrasherTest, abort_message_newline_trimmed) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_set_abort_message("Message with a newline.\n");
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1291,18 +1225,16 @@ TEST_F(CrasherTest, abort_message_newline_trimmed) {
 }
 
 TEST_F(CrasherTest, abort_message_multiple_newlines_trimmed) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_set_abort_message("Message with multiple newlines.\n\n\n\n\n");
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1310,19 +1242,17 @@ TEST_F(CrasherTest, abort_message_multiple_newlines_trimmed) {
 }
 
 TEST_F(CrasherTest, abort_message_backtrace) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     android_set_abort_message("not actually aborting");
     raise(BIONIC_SIGNAL_DEBUGGER);
     exit(0);
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1330,18 +1260,17 @@ TEST_F(CrasherTest, abort_message_backtrace) {
 }
 
 TEST_F(CrasherTest, intercept_timeout) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
 
   // Don't let crasher finish until we timeout.
-  FinishIntercept(&intercept_result);
-
-  ASSERT_NE(1, intercept_result) << "tombstoned reported success? (intercept_result = "
-                                 << intercept_result << ")";
+  InterceptResponse response = {};
+  EXPECT_LT(0, GetInterceptResponse(response)) << "tombstoned did not properly respond";
+  EXPECT_EQ(InterceptStatus::kTimeout, response.status) << "tombstoned did not timeout";
 
   FinishCrasher();
   AssertDeath(SIGABRT);
@@ -1369,13 +1298,11 @@ TEST_F(CrasherTest, wait_for_debugger) {
 }
 
 TEST_F(CrasherTest, backtrace) {
-  std::string result;
-  int intercept_result;
-  unique_fd output_fd;
-
   StartProcess([]() {
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd, kDebuggerdNativeBacktrace);
 
   std::this_thread::sleep_for(500ms);
@@ -1383,8 +1310,8 @@ TEST_F(CrasherTest, backtrace) {
   sigval val;
   val.sival_int = 1;
   ASSERT_EQ(0, sigqueue(crasher_pid, BIONIC_SIGNAL_DEBUGGER, val)) << strerror(errno);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
+  std::string result;
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_BACKTRACE_FRAME(result, "read");
 
@@ -1394,26 +1321,22 @@ TEST_F(CrasherTest, backtrace) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_BACKTRACE_FRAME(result, "abort");
 }
 
 TEST_F(CrasherTest, PR_SET_DUMPABLE_0_crash) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     prctl(PR_SET_DUMPABLE, 0);
     abort();
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1468,19 +1391,14 @@ TEST_F(CrasherTest, capabilities) {
   FinishCrasher();
   AssertDeath(SIGSYS);
 
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
   std::string result;
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_MATCH(result, R"(name: thread_name\s+>>> .+debuggerd_test(32|64) <<<)");
   ASSERT_BACKTRACE_FRAME(result, "tgkill");
 }
 
 TEST_F(CrasherTest, fake_pid) {
-  int intercept_result;
-  unique_fd output_fd;
-
   // Prime the getpid/gettid caches.
   UNUSED(getpid());
   UNUSED(gettid());
@@ -1496,12 +1414,11 @@ TEST_F(CrasherTest, fake_pid) {
       },
       clone_fn);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1590,16 +1507,13 @@ static pid_t seccomp_fork() {
 }
 
 TEST_F(CrasherTest, seccomp_crash) {
-  int intercept_result;
-  unique_fd output_fd;
-
   StartProcess([]() { abort(); }, &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1620,9 +1534,6 @@ static pid_t seccomp_fork_rlimit() {
 }
 
 TEST_F(CrasherTest, seccomp_crash_oom) {
-  int intercept_result;
-  unique_fd output_fd;
-
   StartProcess(
       []() {
         std::vector<void*> vec;
@@ -1637,11 +1548,11 @@ TEST_F(CrasherTest, seccomp_crash_oom) {
       },
       &seccomp_fork_rlimit);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  FinishIntercept();
 
   // We can't actually generate a backtrace, just make sure that the process terminates.
 }
@@ -1679,9 +1590,6 @@ extern "C" void bar(std::atomic_bool& ready) {
 }
 
 TEST_F(CrasherTest, seccomp_tombstone) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
@@ -1698,11 +1606,11 @@ TEST_F(CrasherTest, seccomp_tombstone) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1712,9 +1620,6 @@ TEST_F(CrasherTest, seccomp_tombstone) {
 }
 
 TEST_F(CrasherTest, seccomp_tombstone_thread_abort) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
@@ -1723,11 +1628,11 @@ TEST_F(CrasherTest, seccomp_tombstone_thread_abort) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1738,9 +1643,6 @@ TEST_F(CrasherTest, seccomp_tombstone_thread_abort) {
 }
 
 TEST_F(CrasherTest, seccomp_tombstone_multiple_threads_abort) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
@@ -1757,11 +1659,11 @@ TEST_F(CrasherTest, seccomp_tombstone_multiple_threads_abort) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1772,9 +1674,6 @@ TEST_F(CrasherTest, seccomp_tombstone_multiple_threads_abort) {
 }
 
 TEST_F(CrasherTest, seccomp_backtrace) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
@@ -1791,11 +1690,11 @@ TEST_F(CrasherTest, seccomp_backtrace) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1805,9 +1704,6 @@ TEST_F(CrasherTest, seccomp_backtrace) {
 }
 
 TEST_F(CrasherTest, seccomp_backtrace_from_thread) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
@@ -1827,11 +1723,11 @@ TEST_F(CrasherTest, seccomp_backtrace_from_thread) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1853,9 +1749,6 @@ extern "C" void malloc_enable();
 extern "C" void malloc_disable();
 
 TEST_F(CrasherTest, seccomp_tombstone_no_allocation) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdTombstone;
   StartProcess(
       []() {
@@ -1875,11 +1768,11 @@ TEST_F(CrasherTest, seccomp_tombstone_no_allocation) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1889,9 +1782,6 @@ TEST_F(CrasherTest, seccomp_tombstone_no_allocation) {
 }
 
 TEST_F(CrasherTest, seccomp_backtrace_no_allocation) {
-  int intercept_result;
-  unique_fd output_fd;
-
   static const auto dump_type = kDebuggerdNativeBacktrace;
   StartProcess(
       []() {
@@ -1911,11 +1801,11 @@ TEST_F(CrasherTest, seccomp_backtrace_no_allocation) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd, dump_type);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -1925,16 +1815,15 @@ TEST_F(CrasherTest, seccomp_backtrace_no_allocation) {
 }
 
 TEST_F(CrasherTest, seccomp_mte) {
-#if defined(__aarch64__)
+#if !defined(__aarch64__)
+  GTEST_SKIP() << "Requires aarch64";
+#endif
+
   if (!mte_supported() || !mte_enabled()) {
     GTEST_SKIP() << "Requires MTE";
   }
 
-  LogcatCollector logcat_collector;
-
   size_t allocation_size = 1;
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess(
       [&]() {
         SetTagCheckingLevelSync();
@@ -1944,30 +1833,25 @@ TEST_F(CrasherTest, seccomp_mte) {
       },
       &seccomp_fork);
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   // The fallback path does not support getting MTE error data, so simply check
   // that we get the correct type of crash.
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_MATCH(result, R"(signal 11 \(SIGSEGV\), code 9 \(SEGV_MTESERR)");
-#else
-  GTEST_SKIP() << "Requires aarch64";
-#endif
 }
 
 TEST_F(CrasherTest, competing_tracer) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     raise(SIGABRT);
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
 
   ASSERT_EQ(0, ptrace(PTRACE_SEIZE, crasher_pid, 0, 0));
@@ -1979,8 +1863,7 @@ TEST_F(CrasherTest, competing_tracer) {
   ASSERT_EQ(SIGABRT, WSTOPSIG(status));
 
   ASSERT_EQ(0, ptrace(PTRACE_CONT, crasher_pid, 0, SIGABRT));
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2061,8 +1944,6 @@ TEST_P(GwpAsanCrasherTest, run_gwp_asan_test) {
   bool recoverable = std::get<1>(GetParam());
   LogcatCollector logcat_collector;
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([&recoverable]() {
     const char* env[] = {"GWP_ASAN_SAMPLE_RATE=1", "GWP_ASAN_PROCESS_SAMPLING=1",
                          "GWP_ASAN_MAX_ALLOCS=40000", nullptr, nullptr};
@@ -2086,6 +1967,7 @@ TEST_P(GwpAsanCrasherTest, run_gwp_asan_test) {
     execve(this_binary.c_str(), const_cast<char**>(args), const_cast<char**>(env));
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   if (recoverable) {
@@ -2093,9 +1975,7 @@ TEST_P(GwpAsanCrasherTest, run_gwp_asan_test) {
   } else {
     AssertDeath(SIGSEGV);
   }
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::vector<std::string> log_sources(2);
   ConsumeFd(std::move(output_fd), &log_sources[0]);
@@ -2152,9 +2032,6 @@ TEST_P(GwpAsanCrasherTest, DISABLED_run_gwp_asan_test) {
 }
 
 TEST_F(CrasherTest, fdsan_warning_abort_message) {
-  int intercept_result;
-  unique_fd output_fd;
-
   StartProcess([]() {
     android_fdsan_set_error_level(ANDROID_FDSAN_ERROR_LEVEL_WARN_ONCE);
     unique_fd fd(TEMP_FAILURE_RETRY(open("/dev/null", O_RDONLY | O_CLOEXEC)));
@@ -2165,11 +2042,11 @@ TEST_F(CrasherTest, fdsan_warning_abort_message) {
     _exit(0);
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(0);
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2563,16 +2440,13 @@ static __attribute__((__noinline__)) void overflow_stack(void* p) {
 }
 
 TEST_F(CrasherTest, stack_overflow) {
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() { overflow_stack(nullptr); });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2605,8 +2479,6 @@ static void CreateEmbeddedLibrary(int out_fd) {
 }
 
 TEST_F(CrasherTest, non_zero_offset_in_library) {
-  int intercept_result;
-  unique_fd output_fd;
   TemporaryFile tf;
   CreateEmbeddedLibrary(tf.fd);
   StartProcess([&tf]() {
@@ -2625,12 +2497,11 @@ TEST_F(CrasherTest, non_zero_offset_in_library) {
     crash_func();
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2652,8 +2523,6 @@ static bool CopySharedLibrary(const char* tmp_dir, std::string* tmp_so_name) {
 }
 
 TEST_F(CrasherTest, unreadable_elf) {
-  int intercept_result;
-  unique_fd output_fd;
   std::string tmp_so_name;
   TemporaryDir td;
   StartProcess([&td, &tmp_so_name]() {
@@ -2676,12 +2545,11 @@ TEST_F(CrasherTest, unreadable_elf) {
     crash_func();
   });
 
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2792,10 +2660,7 @@ TEST_F(CrasherTest, intercept_for_main_thread_signal_on_side_thread) {
   StartIntercept(&output_fd, kDebuggerdNativeBacktrace);
   FinishCrasher();
   AssertDeath(0);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2844,10 +2709,7 @@ TEST_F(CrasherTest, fault_address_before_first_map) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2876,10 +2738,7 @@ TEST_F(CrasherTest, fault_address_after_last_map) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2932,10 +2791,7 @@ TEST_F(CrasherTest, fault_address_between_maps) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -2972,10 +2828,7 @@ TEST_F(CrasherTest, fault_address_in_map) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3103,10 +2956,7 @@ TEST_F(CrasherTest, verify_dex_pc_with_function_name) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGSEGV);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3167,10 +3017,7 @@ TEST_F(CrasherTest, verify_map_format) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3224,10 +3071,7 @@ TEST_F(CrasherTest, verify_header) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3277,9 +3121,7 @@ TEST_F(CrasherTest, verify_thread_header) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   // Read the tid data out.
   pid_t tid;
@@ -3310,9 +3152,7 @@ TEST_F(CrasherTest, verify_build_id) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3357,9 +3197,7 @@ TEST_F(CrasherTest, logd_skips_reading_logs) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3387,10 +3225,7 @@ TEST_F(CrasherTest, logd_skips_reading_logs_not_main_thread) {
   StartIntercept(&output_fd, kDebuggerdTombstone);
   FinishCrasher();
   AssertDeath(0);
-
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3412,9 +3247,7 @@ TEST_F(CrasherTest, DISABLED_max_log_messages) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3433,9 +3266,7 @@ TEST_F(CrasherTest, log_with_newline) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3486,9 +3317,7 @@ TEST_F(CrasherTest, log_with_non_printable_ascii_verify_encoded) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3510,9 +3339,7 @@ TEST_F(CrasherTest, log_with_with_special_printable_ascii) {
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  int intercept_result;
-  FinishIntercept(&intercept_result);
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
@@ -3532,8 +3359,6 @@ TEST_F(CrasherTest, log_with_with_special_printable_ascii) {
 TEST_F(CrasherTest, executable) {
   SKIP_WITH_HWASAN << "prctl(PR_SET_MM, PR_SET_MM_ARG_{START,END} not supported on hwasan.";
 
-  int intercept_result;
-  unique_fd output_fd;
   StartProcess([]() {
     const char command_line[] = "TestCommand";
 
@@ -3546,12 +3371,12 @@ TEST_F(CrasherTest, executable) {
         << strerror(errno);
     abort();
   });
+
+  unique_fd output_fd;
   StartIntercept(&output_fd);
   FinishCrasher();
   AssertDeath(SIGABRT);
-  FinishIntercept(&intercept_result);
-
-  ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
+  ASSERT_NO_FATAL_FAILURE(FinishIntercept());
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
