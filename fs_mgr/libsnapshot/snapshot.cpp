@@ -2476,17 +2476,20 @@ bool SnapshotManager::NeedSnapshotsInFirstStageMount() {
         if (slot == Slot::Source) {
             // Device is rebooting into the original slot, so mark this as a
             // rollback.
+            auto contents = ReadUpdateSourceSlotSuffix();
             auto path = GetRollbackIndicatorPath();
             if (!android::base::WriteStringToFile("1", path)) {
                 PLOG(ERROR) << "Unable to write rollback indicator: " << path;
             } else {
-                LOG(INFO) << "Rollback detected, writing rollback indicator to " << path;
+                LOG(INFO) << "Rollback detected, writing rollback indicator to " << path
+                          << ". UpdateSourceSlot: " << contents;
                 if (device_->IsTempMetadata()) {
                     CleanupScratchOtaMetadataIfPresent();
                 }
             }
         }
-        LOG(INFO) << "Not booting from new slot. Will not mount snapshots.";
+        LOG(INFO) << "Not booting from new slot: " << device_->GetSlotSuffix()
+                  << ". Will not mount snapshots.";
         return false;
     }
 
