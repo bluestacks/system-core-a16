@@ -137,6 +137,7 @@ bool GetIouringEnabledProperty();
 bool GetXorCompressionEnabledProperty();
 bool GetODirectEnabledProperty();
 bool GetSkipVerificationProperty();
+bool GetUblkEnabledProperty();
 bool CanUseUserspaceSnapshots();
 bool IsDmSnapshotTestingEnabled();
 bool IsVendorFromAndroid12();

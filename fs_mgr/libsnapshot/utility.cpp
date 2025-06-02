@@ -299,6 +299,11 @@ bool GetSkipVerificationProperty() {
     return fetcher->GetBoolProperty("ro.virtual_ab.skip_verification", false);
 }
 
+bool GetUblkEnabledProperty() {
+    auto fetcher = IPropertyFetcher::GetInstance();
+    return fetcher->GetBoolProperty("ro.virtual_ab.ublk.enabled", false);
+}
+
 std::string GetOtherPartitionName(const std::string& name) {
     auto suffix = android::fs_mgr::GetPartitionSlotSuffix(name);
     CHECK(suffix == "_a" || suffix == "_b");

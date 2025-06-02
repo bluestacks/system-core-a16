@@ -422,6 +422,12 @@ bool FirstStageMountVBootV2::CreateSnapshotPartitions(SnapshotManager* sm) {
         if (android::base::StartsWith(device, "/dev/dm-user/")) {
             return block_dev_init_.InitDmUser(android::base::Basename(device));
         }
+        if (android::base::StartsWith(device, "/dev/block/ublkb")) {
+            return block_dev_init_.InitDmDevice(device);
+        }
+        if (android::base::StartsWith(device, "/dev/ublk")) {
+            return block_dev_init_.InitUblkMiscDevices(android::base::Basename(device));
+        }
         return block_dev_init_.InitDevices({device});
     });
     if (!sm->CreateLogicalAndSnapshotPartitions(super_path_)) {

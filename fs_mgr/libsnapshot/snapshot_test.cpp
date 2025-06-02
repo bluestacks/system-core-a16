@@ -199,7 +199,7 @@ class SnapshotTest : public ::testing::Test {
         if (api_level == -1) {
             api_level = android::base::GetIntProperty("ro.product.first_api_level", -1);
         }
-        return api_level != __ANDROID_API_S__;
+        return api_level <= __ANDROID_API_S__;
     }
 
     void InitializeState() {

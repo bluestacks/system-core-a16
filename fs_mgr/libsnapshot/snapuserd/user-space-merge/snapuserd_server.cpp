@@ -34,6 +34,8 @@
 #include <fs_mgr/file_wait.h>
 #include <snapuserd/dm_user_block_server.h>
 #include <snapuserd/snapuserd_client.h>
+#include <snapuserd/ublk_block_server.h>
+#include <utility.h>
 #include "snapuserd_server.h"
 #include "user-space-merge/handler_manager.h"
 #include "user-space-merge/snapuserd_core.h"
@@ -46,10 +48,18 @@ using namespace std::string_literals;
 using android::base::borrowed_fd;
 using android::base::unique_fd;
 
+void UserSnapshotServer::Initialize(bool use_ublk) {
+    if (use_ublk) {
+        block_server_factory_ = std::make_unique<UblkBlockServerFactory>();
+        LOG(INFO) << "Supporting UBLK snapshots";
+    } else {
+        block_server_factory_ = std::make_unique<DmUserBlockServerFactory>();
+    }
+    is_ublk_enabled_ = use_ublk;
+}
 UserSnapshotServer::UserSnapshotServer() {
     terminating_ = false;
     handlers_ = std::make_unique<SnapshotHandlerManager>();
-    block_server_factory_ = std::make_unique<DmUserBlockServerFactory>();
 }
 
 UserSnapshotServer::~UserSnapshotServer() {
@@ -153,6 +163,11 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
         if (!handlers_->StartHandler(out[1])) {
             return Sendmsg(fd, "fail");
         }
+        if (is_ublk_enabled_) {
+            LOG(INFO) << "Starting device " << out[1];
+            block_server_factory_->StartDevice(out[1]);
+            LOG(INFO) << "Device " << out[1] << " started";
+        }
         return Sendmsg(fd, "success");
     } else if (cmd == "stop") {
         // Message format: stop
@@ -180,6 +195,10 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
             LOG(ERROR) << "Malformed delete message, " << out.size() << " parts";
             return Sendmsg(fd, "fail");
         }
+        if (!block_server_factory_->StopDevice(out[1])) {
+            LOG(ERROR) << "Failed to stop device " << out[1];
+            return Sendmsg(fd, "fail");
+        }
         if (!handlers_->DeleteHandler(out[1])) {
             return Sendmsg(fd, "fail");
         }
@@ -189,11 +208,16 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
         terminating_ = true;
         return true;
     } else if (cmd == "supports") {
+        // Message format:
+        // supports,<feature>
         if (out.size() != 2) {
             LOG(ERROR) << "Malformed supports message, " << out.size() << " parts";
             return Sendmsg(fd, "fail");
         }
         if (out[1] == "second_stage_socket_handoff") {
+            return Sendmsg(fd, "success");
+        }
+        if (out[1] == "ublk" && KernelSupportsUblk()) {
             return Sendmsg(fd, "success");
         }
         return Sendmsg(fd, "fail");
@@ -235,6 +259,33 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
     } else if (cmd == "resume_merge") {
         handlers_->ResumeMerge();
         return Sendmsg(fd, "success");
+    } else if (cmd == "create") {
+        // Create the snapshot device
+        // Message format:
+        // create,misc_name,num_sectors
+
+        if (out.size() != 3) {
+            LOG(ERROR) << "Malformed create message, " << out.size() << " parts";
+            return Sendmsg(fd, "fail");
+        }
+        if (!block_server_factory_->CreateDevice(out[1], strtoull(out[2].c_str(), nullptr, 10))) {
+            LOG(ERROR) << "Failed to create snapshot device for " << out[1];
+            return Sendmsg(fd, "fail");
+        }
+        return Sendmsg(fd, "success");
+    } else if (cmd == "get_device_name") {
+        // Message format:
+        // get_device_name,<misc_name>
+        if (out.size() != 2) {
+            LOG(ERROR) << "Malformed get_device_name message, " << out.size() << " parts";
+            return Sendmsg(fd, "fail");
+        }
+        auto device_name = block_server_factory_->GetDeviceName(out[1]);
+        if (device_name.has_value()) {
+            return Sendmsg(fd, "success," + device_name.value());
+        }
+        LOG(ERROR) << "Failed to get device name for " << out[1];
+        return Sendmsg(fd, "fail,device_not_found");
     } else {
         LOG(ERROR) << "Received unknown message type from client";
         Sendmsg(fd, "fail");
@@ -349,7 +400,47 @@ void UserSnapshotServer::Interrupt() {
     sockfd_ = {};
     SetTerminating();
 }
+uint64_t UserSnapshotServer::GetBlockDeviceNumSectors(const std::string& deviceName) {
+    unique_fd fd(TEMP_FAILURE_RETRY(open(deviceName.c_str(), O_RDONLY | O_CLOEXEC)));
+    if (fd < 0) {
+        LOG(ERROR) << "Cannot open block device: " << deviceName;
+        return false;
+    }
 
+    uint64_t dev_sz = get_block_device_size(fd.get());
+    if (!dev_sz) {
+        LOG(ERROR) << "Failed to find block device size: " << deviceName;
+        return false;
+    }
+
+    return dev_sz >> 9;
+}
+// This is only needed for ublk based snapuserd because it needs help creating ublkc
+// and ublkb devices
+bool UserSnapshotServer::SendSnapshotDeviceName(android::base::borrowed_fd fd,
+                                                const std::string& misc_name) {
+    auto device_name = block_server_factory_->GetDeviceName(misc_name);
+    if (device_name.has_value()) {
+        LOG(INFO) << "Sending device name " << device_name.value() << " for " << misc_name;
+        return Sendmsg(fd, device_name.value());
+    }
+    return false;
+}
+bool UserSnapshotServer::SendSnapshotControlDeviceName(android::base::borrowed_fd fd,
+                                                       const std::string& misc_name) {
+    auto device_name = block_server_factory_->GetDeviceName(misc_name);
+    if (device_name.has_value()) {
+        auto control_device_name =
+                "/dev/ublkc" + device_name.value().substr(strlen("/dev/block/ublkb"));
+        LOG(INFO) << "Sending device name " << control_device_name << " for " << misc_name;
+        return Sendmsg(fd, control_device_name);
+    }
+    return false;
+}
+void UserSnapshotServer::SetUeventHelper(UeventHelperCallback callback) {
+    uevent_helper_ = std::move(callback);
+    block_server_factory_->SetUeventHelper(std::move(uevent_helper_));
+}
 std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(const std::string& misc_name,
                                                               const std::string& cow_device_path,
                                                               const std::string& backing_device,
@@ -372,6 +463,16 @@ std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(const std::string&
         options.skip_verification = true;
     }
 
+    uint64_t num_sectors = GetBlockDeviceNumSectors(base_path_merge);
+    if (!num_sectors) {
+        return nullptr;
+    }
+
+    LOG(INFO) << "Base path " << base_path_merge << " has " << num_sectors << " sectors";
+    if (is_ublk_enabled_) {
+        CHECK(block_server_factory_->CreateDevice(misc_name, num_sectors));
+        options.num_worker_threads = 1;
+    }
     auto opener = block_server_factory_->CreateOpener(misc_name);
 
     return handlers_->AddHandler(misc_name, cow_device_path, backing_device, base_path_merge,
@@ -478,7 +579,9 @@ bool UserSnapshotServer::RunForSocketHandoff() {
 }
 
 bool UserSnapshotServer::StartHandler(const std::string& misc_name) {
-    return handlers_->StartHandler(misc_name);
+    if (!handlers_->StartHandler(misc_name)) return false;
+
+    return block_server_factory_->StartDevice(misc_name);
 }
 
 }  // namespace snapshot

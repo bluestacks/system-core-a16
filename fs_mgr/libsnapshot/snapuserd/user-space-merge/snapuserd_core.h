@@ -45,6 +45,7 @@
 #include <storage_literals/storage_literals.h>
 #include <system/thread_defs.h>
 #include <user-space-merge/handler_manager.h>
+#include "snapuserd/snapuserd_common.h"
 #include "snapuserd_readahead.h"
 #include "snapuserd_verify.h"
 
