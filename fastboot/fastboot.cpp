@@ -1058,13 +1058,12 @@ static bool load_buf_fd(unique_fd fd, struct fastboot_buffer* buf, const Flashin
         return false;
     }
 
-    if (sparse_file* s = sparse_file_import(fd.get(), false, false)) {
-        buf->image_size = sparse_file_len(s, false, false);
+    if (SparsePtr s(sparse_file_import(fd.get(), false, false), sparse_file_destroy); s) {
+        buf->image_size = sparse_file_len(s.get(), false, false);
         if (buf->image_size < 0) {
             LOG(ERROR) << "Could not compute length of sparse file";
             return false;
         }
-        sparse_file_destroy(s);
         buf->file_type = FB_BUFFER_SPARSE;
     } else {
         buf->image_size = sz;
