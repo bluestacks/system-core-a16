@@ -2454,25 +2454,11 @@ OverlayfsCheckResult CheckOverlayfs() {
         return {.supported = false};
     }
 
-    if (!use_override_creds) {
-        if (major > 5 || (major == 5 && minor >= 15)) {
-            return {.supported = true, ",userxattr"};
-        }
-        return {.supported = true};
+    if (major > 5 || (major == 5 && minor >= 15)) {
+        return {.supported = true, ",userxattr"};
     }
 
-    // Overlayfs available in the kernel, and patched for override_creds?
-    if (access("/sys/module/overlay/parameters/override_creds", F_OK) == 0) {
-        auto mount_flags = ",override_creds=off"s;
-        if (major > 5 || (major == 5 && minor >= 15)) {
-            mount_flags += ",userxattr"s;
-        }
-        return {.supported = true, .mount_flags = mount_flags};
-    }
-    if (major < 4 || (major == 4 && minor <= 3)) {
-        return {.supported = true};
-    }
-    return {.supported = false};
+    return {.supported = true};
 }
 
 }  // namespace fs_mgr
