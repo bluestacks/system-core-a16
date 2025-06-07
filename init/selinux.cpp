@@ -709,8 +709,6 @@ void LoadSelinuxPolicyAndroid() {
 
 #ifdef ALLOW_REMOUNT_OVERLAYS
 bool EarlySetupOverlays() {
-    if (android::fs_mgr::use_override_creds) return false;
-
     bool has_overlays = false;
     std::string contents;
     auto result = android::base::ReadFileToString("/proc/mounts", &contents, true);
