@@ -102,19 +102,19 @@ using namespace std::string_literals;
 
 using android::base::boot_clock;
 using android::base::ConsumePrefix;
-using android::base::GetProperty;
-using android::base::GetIntProperty;
 using android::base::GetBoolProperty;
+using android::base::GetIntProperty;
+using android::base::GetProperty;
 using android::base::ReadFileToString;
 using android::base::SetProperty;
 using android::base::StringPrintf;
 using android::base::Timer;
 using android::base::Trim;
 using android::base::unique_fd;
-using android::fs_mgr::AvbHandle;
-using android::snapshot::SnapshotManager;
 using android::base::WaitForProperty;
 using android::base::WriteStringToFile;
+using android::fs_mgr::AvbHandle;
+using android::snapshot::SnapshotManager;
 
 namespace android {
 namespace init {
@@ -442,8 +442,8 @@ int StopServicesFromApex(const std::string& apex_name) {
         service_names.emplace(service->name());
     }
     constexpr std::chrono::milliseconds kServiceStopTimeout = 10s;
-    int still_running = StopServicesAndLogViolations(service_names, kServiceStopTimeout,
-                        true /*SIGTERM*/);
+    int still_running =
+            StopServicesAndLogViolations(service_names, kServiceStopTimeout, true /*SIGTERM*/);
     // Send SIGKILL to ones that didn't terminate cleanly.
     if (still_running > 0) {
         still_running = StopServicesAndLogViolations(service_names, 0ms, false /*SIGKILL*/);
@@ -672,7 +672,8 @@ static Result<void> property_enable_triggers_action(const BuiltinArguments& args
 }
 
 static Result<void> queue_property_triggers_action(const BuiltinArguments& args) {
-    ActionManager::GetInstance().QueueBuiltinAction(property_enable_triggers_action, "enable_property_trigger");
+    ActionManager::GetInstance().QueueBuiltinAction(property_enable_triggers_action,
+                                                    "enable_property_trigger");
     ActionManager::GetInstance().QueueAllPropertyActions();
     return {};
 }
@@ -683,7 +684,7 @@ static Result<void> queue_property_triggers_action(const BuiltinArguments& args)
 static void SetUsbController() {
     static auto controller_set = false;
     if (controller_set) return;
-    std::unique_ptr<DIR, decltype(&closedir)>dir(opendir("/sys/class/udc"), closedir);
+    std::unique_ptr<DIR, decltype(&closedir)> dir(opendir("/sys/class/udc"), closedir);
     if (!dir) return;
 
     dirent* dp;
@@ -742,7 +743,9 @@ static void HandleSignalFd(int signal) {
 }
 
 static void UnblockSignals() {
-    const struct sigaction act { .sa_handler = SIG_DFL };
+    const struct sigaction act {
+        .sa_handler = SIG_DFL
+    };
     sigaction(SIGCHLD, &act, nullptr);
 
     sigset_t mask;
@@ -756,8 +759,7 @@ static void UnblockSignals() {
 }
 
 static Result<void> RegisterSignalFd(Epoll* epoll, int signal, int fd) {
-    return epoll->RegisterHandler(
-            fd, [signal]() { HandleSignalFd(signal); }, EPOLLIN | EPOLLPRI);
+    return epoll->RegisterHandler(fd, [signal]() { HandleSignalFd(signal); }, EPOLLIN | EPOLLPRI);
 }
 
 static Result<int> CreateAndRegisterSignalFd(Epoll* epoll, int signal) {
@@ -780,7 +782,9 @@ static Result<int> CreateAndRegisterSignalFd(Epoll* epoll, int signal) {
 static void InstallSignalFdHandler(Epoll* epoll) {
     // Applying SA_NOCLDSTOP to a defaulted SIGCHLD handler prevents the signalfd from receiving
     // SIGCHLD when a child process stops or continues (b/77867680#comment9).
-    const struct sigaction act { .sa_flags = SA_NOCLDSTOP, .sa_handler = SIG_DFL };
+    const struct sigaction act {
+        .sa_flags = SA_NOCLDSTOP, .sa_handler = SIG_DFL
+    };
     sigaction(SIGCHLD, &act, nullptr);
 
     // Register a handler to unblock signals in the child processes.
@@ -957,16 +961,14 @@ static Result<void> CheckTradeInModeStatus([[maybe_unused]] const BuiltinArgumen
 static void SecondStageBootMonitor(int timeout_sec) {
     auto cur_time = boot_clock::now().time_since_epoch();
     int cur_sec = std::chrono::duration_cast<std::chrono::seconds>(cur_time).count();
-    int extra_sec = timeout_sec <= cur_sec? 0 : timeout_sec - cur_sec;
+    int extra_sec = timeout_sec <= cur_sec ? 0 : timeout_sec - cur_sec;
     auto boot_timeout = std::chrono::seconds(extra_sec);
 
-    LOG(INFO) << "Started BootMonitorThread, expiring in "
-              << timeout_sec
+    LOG(INFO) << "Started BootMonitorThread, expiring in " << timeout_sec
               << " seconds from boot-up";
 
     if (!WaitForProperty("sys.boot_completed", "1", boot_timeout)) {
-        LOG(ERROR) << "BootMonitorThread: boot didn't complete in "
-                   << timeout_sec
+        LOG(ERROR) << "BootMonitorThread: boot didn't complete in " << timeout_sec
                    << " seconds. Trigger a panic!";
 
         // add a short delay for logs to be flushed out.
