@@ -78,6 +78,13 @@ TEST_F(DmTest, HasMinimumTargets) {
     ASSERT_TRUE(dm.GetTargetByName("linear", &info));
 }
 
+TEST_F(DmTest, DebugString) {
+    DmTable table;
+    ASSERT_TRUE(table.Emplace<DmTargetLinear>(0, 1, "dev_a", 0));
+    ASSERT_TRUE(table.Emplace<DmTargetLinear>(1, 1, "dev_b", 0));
+    ASSERT_EQ("linear 0 1 dev_a 0;linear 1 1 dev_b 0", table.DebugString());
+}
+
 TEST_F(DmTest, DmLinear) {
     unique_fd tmp1(CreateTempFile("file_1", 4096));
     ASSERT_GE(tmp1, 0);

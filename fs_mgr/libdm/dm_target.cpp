@@ -52,6 +52,14 @@ std::string DmTarget::Serialize() const {
     return data;
 }
 
+std::string DmTarget::DebugString() const {
+    std::string params = GetParameterString();
+    if (params.empty()) {
+        params = "(no parameters)";
+    }
+    return name() + " " + std::to_string(start()) + " " + std::to_string(size()) + " " + params;
+}
+
 std::string DmTargetZero::GetParameterString() const {
     // The zero target type has no additional parameters.
     return "";
