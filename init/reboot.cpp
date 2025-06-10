@@ -346,18 +346,38 @@ static UmountStat TryUmountPartitions(bool force) {
     return UMOUNT_STAT_ERROR;
 }
 
-static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
-    // Terminate (SIGTERM) the services before unmounting partitions.
-    // If the processes block the signal, then partitions will eventually fail
-    // to unmount and then we fallback to SIGKILL the services.
-    //
-    // Hence, give the services a chance for a graceful shutdown before sending SIGKILL.
+static void KillAllProcesses(bool force) {
+    // SIGKILL on force == true. SIGTERM if not.
+    WriteStringToFile(force ? "i" : "e", PROC_SYSRQ);
+}
+
+static UmountStat UmountPartitions(std::chrono::milliseconds timeout, bool ota_update_in_progress) {
+    // If we have no time left, kill them all as fast as possible by sending SIGKILL. Otherwise
+    // SIGTERM so that they can gracefully exit.
+    bool immediate = timeout == 0ms;
+    // Terminate the services before unmounting partitions. If we have some time left, give them a
+    // chance for a graceful shutdown by sending SIGTERM. If not, kill immediately by sending
+    // SIGKILL.
     for (const auto& s : ServiceList::GetInstance()) {
         if (s->IsShutdownCritical()) {
             LOG(INFO) << "Shutdown service: " << s->name();
-            s->Terminate();
+            if (immediate) {
+                s->Timeout();
+            } else {
+                s->Terminate();
+            }
         }
     }
+    // Below is to ensure that all remaining processes (except init) are SIGKILL'ed or SIGTERM'ed.
+    // This is because some children of the services above might have created new process groups.
+    // Note that, each service by default is a process group leader, and we send a signal to the
+    // process group when killing the service. So, if some children created their own process group,
+    // they don't get killed. Below is to kill even such ones.
+    //
+    // However, if OTA update is in progress we NEVER send SIGKILL because snapuserd will be serving
+    // I/Os and therefore killing it will ruin the update. snapuserd ignores SIGTERM.
+    KillAllProcesses(immediate && !ota_update_in_progress);
+
     ReapAnyOutstandingChildren();
 
     Timer t;
@@ -366,12 +386,12 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
      */
     while (true) {
         // force umount operation if timeout is not set
-        UmountStat stat = TryUmountPartitions(/*force=*/timeout == 0ms);
+        UmountStat stat = TryUmountPartitions(immediate);
         if (stat == UMOUNT_STAT_SUCCESS) {
             return UMOUNT_STAT_SUCCESS;
         }
 
-        if (stat == UMOUNT_STAT_NOT_AVAILABLE || timeout == 0ms) {
+        if (stat == UMOUNT_STAT_NOT_AVAILABLE || immediate) {
             return UMOUNT_STAT_ERROR;
         }
 
@@ -380,10 +400,6 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout) {
         }
         std::this_thread::sleep_for(100ms);
     }
-}
-
-static void KillAllProcesses() {
-    WriteStringToFile("i", PROC_SYSRQ);
 }
 
 // Reboot/shutdown monitor thread
@@ -521,7 +537,7 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
             ota_update_in_progress = true;
         }
     }
-    UmountStat stat = UmountPartitions(timeout - t.duration());
+    UmountStat stat = UmountPartitions(timeout - t.duration(), ota_update_in_progress);
     if (stat != UMOUNT_STAT_SUCCESS) {
         // Do not delete: Critical log for reboot_fs_integrity_test.
         KLOG_INFO(LOG_TAG, "umount timeout, last resort, kill all and try");
@@ -542,7 +558,7 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
             bool umount_dynamic_partitions = UmountDynamicPartitions(dynamic_partitions);
             LOG(INFO) << "Sending SIGTERM to all process";
             // Send SIGTERM to all processes except init
-            WriteStringToFile("e", PROC_SYSRQ);
+            KillAllProcesses(/* force */ false);
             // Wait for processes to terminate
             std::this_thread::sleep_for(1s);
             // Try one more attempt to umount other partitions which failed
@@ -552,9 +568,9 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
             }
             return stat;
         }
-        KillAllProcesses();
+        KillAllProcesses(/* force */ true);
         // even if it succeeds, still it is timeout and do not run fsck with all processes killed
-        UmountStat st = UmountPartitions(0ms);
+        UmountStat st = UmountPartitions(0ms, ota_update_in_progress);
         if ((st != UMOUNT_STAT_SUCCESS) && DUMP_ON_UMOUNT_FAILURE) DumpUmountDebuggingInfo();
     }
 
