@@ -869,7 +869,7 @@ on post-fs-data
     mkdir /data/ota 0771 root root encryption=Require
 
     # create the OTA package directory. It will be accessed by GmsCore (cache
-    # group), update_engine and update_verifier.
+    # group), update_engine
     mkdir /data/ota_package 0770 system cache encryption=Require
 
     # create resource-cache and double-check the perms
@@ -1085,8 +1085,6 @@ on bpf-progs-loaded
 # to start-zygote in device's init.rc to unblock zygote start.
 on zygote-start
     wait_for_prop odsign.verification.done 1
-    # A/B update verifier that marks a successful boot.
-    exec_start update_verifier
     start statsd
     start zygote
     start zygote_secondary
