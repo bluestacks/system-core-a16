@@ -395,7 +395,7 @@ on init
 
     # make the PSI monitor accessible to others
     chown system system /proc/pressure/memory
-    chmod 0664 /proc/pressure/memory
+    chmod 0666 /proc/pressure/memory
 
     mount bpf bpf /sys/fs/bpf nodev noexec nosuid
 
