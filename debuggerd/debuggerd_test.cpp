@@ -20,7 +20,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
-#include <linux/prctl.h>
 #include <malloc.h>
 #include <pthread.h>
 #include <setjmp.h>
