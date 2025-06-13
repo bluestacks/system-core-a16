@@ -19,15 +19,13 @@
 
 namespace android {
 namespace snapshot {
-
 bool SetThreadPriority(int priority);
 bool SetProfiles(std::initializer_list<std::string_view> profiles);
 bool KernelSupportsIoUring();
-
 bool GetUserspaceSnapshotsEnabledProperty();
 bool KernelSupportsCompressedSnapshots();
 bool CanUseUserspaceSnapshots();
 bool IsVendorFromAndroid12();
-
+bool IsVabcWithUblkSupportEnabled();
 }  // namespace snapshot
 }  // namespace android

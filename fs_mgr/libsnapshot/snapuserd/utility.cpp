@@ -21,6 +21,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <com_android_libsnapshot.h>
 #include <libdm/dm.h>
 #include <processgroup/processgroup.h>
 
@@ -96,6 +97,10 @@ bool CanUseUserspaceSnapshots() {
         return false;
     }
     return true;
+}
+
+bool IsVabcWithUblkSupportEnabled() {
+    return com::android::libsnapshot::vabc_with_ublk_support();
 }
 
 }  // namespace snapshot

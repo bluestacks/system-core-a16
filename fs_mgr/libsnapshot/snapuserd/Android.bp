@@ -84,6 +84,7 @@ cc_library_static {
         "libext2_uuid",
         "libext4_utils",
         "libsnapshot_cow",
+        "libsnapshot_flags_cc_lib",
         "liburing",
         "libprocessgroup",
         "libprocessgroup_util",

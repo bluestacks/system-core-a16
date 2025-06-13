@@ -26,6 +26,7 @@
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
 #include <android-base/strings.h>
+#include <com_android_libsnapshot.h>
 #include <fs_mgr/roots.h>
 #include <liblp/property_fetcher.h>
 
@@ -324,6 +325,10 @@ bool GetDebugFlag(const std::string& flag) {
     auto fetcher = IPropertyFetcher::GetInstance();
     std::string prop_name = "persist.virtual_ab.testing." + flag;
     return IsDebuggable() && fetcher->GetBoolProperty(prop_name, false);
+}
+
+bool IsVabcWithUblkSupportEnabledByFlag() {
+    return com::android::libsnapshot::vabc_with_ublk_support();
 }
 
 }  // namespace snapshot
