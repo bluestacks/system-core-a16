@@ -428,6 +428,7 @@ void SnapshotHandler::ResumeMergeThreads() {
         std::lock_guard<std::mutex> lock(pause_merge_lock_);
         pause_merge_ = false;
     }
+    pause_merge_cv_.notify_all();
 }
 
 std::string SnapshotHandler::GetMergeStatus() {
