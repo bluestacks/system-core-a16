@@ -46,6 +46,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/macros.h>
+#include <android-base/process.h>
 #include <android-base/properties.h>
 #include <android-base/scopeguard.h>
 #include <android-base/strings.h>
@@ -57,6 +58,7 @@
 #include <libsnapshot/snapshot.h>
 #include <logwrap/logwrap.h>
 #include <private/android_filesystem_config.h>
+#include <procinfo/process.h>
 #include <selinux/selinux.h>
 
 #include "action.h"
@@ -346,7 +348,27 @@ static UmountStat TryUmountPartitions(bool force) {
     return UMOUNT_STAT_ERROR;
 }
 
+static void DumpRemainingProcesses() {
+    LOG(INFO) << "Remaining userspace processes except init: ";
+    android::procinfo::ProcessInfo info;
+    std::string error;
+    for (const auto& pid : android::base::AllPids{}) {
+        if (!android::procinfo::GetProcessInfo(pid, &info, &error)) {
+            LOG(WARNING) << "Cannot get info for pid " << pid << ": " << error;
+            continue;
+        }
+        bool init_or_kthread = (info.ppid == 0) || (info.ppid == 2);
+        if (init_or_kthread) {
+            continue;
+        }
+        LOG(INFO) << std::format("pid: {} name: ({}) ppid: {} pgrp: {} state: {}", info.pid,
+                                 info.name, info.ppid, info.pgrp, static_cast<char>(info.state));
+    }
+}
+
 static void KillAllProcesses(bool force) {
+    // To know what are die-hard processes.
+    DumpRemainingProcesses();
     // SIGKILL on force == true. SIGTERM if not.
     WriteStringToFile(force ? "i" : "e", PROC_SYSRQ);
 }
