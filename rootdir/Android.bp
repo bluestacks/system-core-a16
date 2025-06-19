@@ -149,10 +149,13 @@ EXPORT_GLOBAL_ASAN_OPTIONS = select(soong_config_variable("ANDROID", "ASAN_ENABL
     default: "",
 })
 
+// LINT.IfChange
+// N.B. keep this in sync with GLOBAL_HWASAN_OPTIONS in system/core/init/Android.bp
 EXPORT_GLOBAL_HWASAN_OPTIONS = select(soong_config_variable("ANDROID", "HWASAN_ENABLED"), {
     true: "export HWASAN_OPTIONS heap_history_size=1023,stack_history_size=512,export_memory_stats=0,max_malloc_fill_size=131072,malloc_fill_byte=0",
     default: "",
 })
+// LINT.ThenChange(/init/Android.bp)
 
 EXPORT_GLOBAL_GCOV_OPTIONS = select(soong_config_variable("ANDROID", "GCOV_COVERAGE"), {
     true: "export GCOV_PREFIX /data/misc/trace",

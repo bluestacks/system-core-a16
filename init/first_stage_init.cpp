@@ -36,6 +36,7 @@
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/stringify.h>
 #include <android-base/stringprintf.h>
 #include <android/avf_cc_flags.h>
 #include <fs_mgr.h>
@@ -562,6 +563,18 @@ int FirstStageMain(int argc, char** argv) {
     dup2(fd, STDOUT_FILENO);
     dup2(fd, STDERR_FILENO);
     close(fd);
+#ifdef HWASAN_OPTIONS
+    // (second stage) init is the first process to use HWASan. It gets run too
+    // early for the HWASAN_OPTIONS in init.environ.rc.gen to apply, so we
+    // have to do it here manually.
+    //
+    // This is especially important for disable_coredump, which defaults to 1.
+    // If the user sets it to `0` in HWASAN_OPTIONS, and we didn't also apply
+    // it to (second stage) init, the setting would not take effect. This is
+    // because `0` is in fact a noop, while `1` applies changes. These changes
+    // are inherited beyond exec.
+    setenv("HWASAN_OPTIONS", STRINGIFY(HWASAN_OPTIONS), true);
+#endif
     execv(path, const_cast<char**>(args));
 
     // execv() only returns if an error happened, in which case we
