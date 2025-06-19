@@ -68,10 +68,39 @@ prebuilt_etc {
     no_full_install: true,
 }
 
+// In your BoardConfig.mk you can use `soong_config_set` to set the
+// additional properties.
+//
+// For example:
+// $(call soong_config_set,adb,additional_debug_properties,ro.foo=1 ro.bar=2)
+ADDITIONAL_ADB_DEBUG_PROPERTIES = select(soong_config_variable("adb", "additional_debug_properties"), {
+    any @ props: props,
+    default: "",
+})
+
+genrule {
+    name: "adb_debug.prop.gen",
+    srcs: ["adb_debug.prop.in"],
+    out: ["adb_debug.prop"],
+    // Unfortunately there is no `args` string list parameter for `genrule` and
+    // there is no shell quote / string list concat methods we can use from
+    // blueprint, so the best we can do is hope that
+    // ADDITIONAL_ADB_DEBUG_PROPERTIES doesn't contain any special shell
+    // characters.
+    cmd: "ADDITIONAL_ADB_DEBUG_PROPERTIES='" + ADDITIONAL_ADB_DEBUG_PROPERTIES + "';" +
+    "cp -f $(in) $(out) && " +
+    "if [ -n \"$${ADDITIONAL_ADB_DEBUG_PROPERTIES}\" ]; then " +
+    "echo \"# Additional board specific properties\" >> $(out); " +
+    "for prop in $${ADDITIONAL_ADB_DEBUG_PROPERTIES}; do " +
+    "echo \"$${prop}\" >> $(out); " +
+    "done; " +
+    "fi",
+}
+
 // adb_debug.prop in debug ramdisk
 prebuilt_root {
     name: "adb_debug.prop",
-    src: "adb_debug.prop",
+    src: ":adb_debug.prop.gen",
     debug_ramdisk: true,
 }
 
