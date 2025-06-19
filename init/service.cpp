@@ -204,8 +204,8 @@ void Service::KillProcessGroup(int signal) {
     // call this function to send SIGTERM/SIGKILL to all processes.
     // These signals must be sent for a successful shutdown.
     if (!process_cgroup_empty_ || IsRunning()) {
-        LOG(INFO) << "Sending signal " << signal << " to service '" << name_ << "' (pid " << pid_
-                  << ") process group...";
+        LOG(INFO) << "Sending " << SignalName(signal) << " to service '" << name_ << "' (pid "
+                  << pid_ << ") process group...";
         int r;
         if (signal == SIGTERM) {
             r = killProcessGroupOnce(uid(), pid_, signal);
