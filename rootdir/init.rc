@@ -711,7 +711,6 @@ on post-fs-data
     mkdir /data/property 0700 root root encryption=Require
     load_persist_props
 
-    start logd
     start logd-reinit
 
     # Some existing vendor rc files use 'on load_persist_props_action' to know
