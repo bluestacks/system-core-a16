@@ -611,8 +611,12 @@ Result<void> Service::Start() {
             flags_ |= SVC_RESTART;
         }
 
+        const std::chrono::milliseconds service_uptime =
+                std::chrono::duration_cast<std::chrono::milliseconds>(boot_clock::now() -
+                                                                      time_started_);
         LOG(INFO) << "service '" << name_
-                  << "' requested start, but it is already running (flags: " << flags_ << ")";
+                  << "' requested start, but it is already running (flags: " << flags_
+                  << ", pid: " << pid_ << ", started " << service_uptime.count() << "ms ago)";
 
         // It is not an error to try to start a service that is already running.
         reboot_on_failure.Disable();
