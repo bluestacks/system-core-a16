@@ -42,6 +42,26 @@ using android::base::unique_fd;
 // We use a four-digit suffix at the end of filenames.
 static const size_t kMaxFilePieces = 500;
 
+// Helper to write a list of filenames for split file list.
+static FiemapStatus WriteSplitFileList(const std::string& out_file,
+                                       const std::vector<std::string>& files) {
+    unique_fd fd(open(out_file.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0660));
+    if (fd < 0) {
+        PLOG(ERROR) << "Failed to open " << out_file;
+        return FiemapStatus::FromErrno(errno);
+    }
+
+    for (const auto& file_path : files) {
+        std::string line = android::base::Basename(file_path) + "\n";
+        if (!android::base::WriteStringToFd(line, fd)) {
+            PLOG(ERROR) << "Write failed " << out_file;
+            return FiemapStatus::FromErrno(errno);
+        }
+    }
+    fsync(fd.get());
+    return FiemapStatus::Ok();
+}
+
 std::unique_ptr<SplitFiemap> SplitFiemap::Create(const std::string& file_path, uint64_t file_size,
                                                  uint64_t max_piece_size,
                                                  ProgressCallback progress) {
@@ -121,22 +141,15 @@ FiemapStatus SplitFiemap::Create(const std::string& file_path, uint64_t file_siz
     }
 
     // Create the split file list.
-    unique_fd fd(open(out->list_file_.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, 0660));
-    if (fd < 0) {
-        PLOG(ERROR) << "Failed to open " << file_path;
+    std::vector<std::string> split_file_paths;
+    split_file_paths.reserve(out->files_.size());
+    for (const auto& file : out->files_) {
+        split_file_paths.emplace_back(file->file_path());
+    }
+    if (auto status = WriteSplitFileList(file_path, split_file_paths); !status.is_ok()) {
         out.reset();
-        return FiemapStatus::FromErrno(errno);
+        return status;
     }
-
-    for (const auto& writer : out->files_) {
-        std::string line = android::base::Basename(writer->file_path()) + "\n";
-        if (!android::base::WriteFully(fd, line.data(), line.size())) {
-            PLOG(ERROR) << "Write failed " << file_path;
-            out.reset();
-            return FiemapStatus::FromErrno(errno);
-        }
-    }
-    fsync(fd.get());
 
     // Unset this bit, so we don't unlink on destruction.
     out->creating_ = false;
