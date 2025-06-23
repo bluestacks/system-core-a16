@@ -698,6 +698,9 @@ bool ReadAhead::ReadAheadIOStart() {
 
     SNAP_LOG(DEBUG) << "Read-ahead: total_ra_blocks_merged: " << total_ra_blocks_completed_;
 
+    // Invalidate page-cache pages.
+    posix_fadvise(backing_store_fd_.get(), 0, 0, POSIX_FADV_DONTNEED);
+
     // Wait for the merge to finish for the previous RA window. We shouldn't
     // be touching the scratch space until merge is complete of previous RA
     // window. If there is a crash during this time frame, merge should resume

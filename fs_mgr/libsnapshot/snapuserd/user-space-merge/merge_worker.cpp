@@ -182,6 +182,8 @@ bool MergeWorker::MergeReplaceZeroOps() {
                 return false;
             }
 
+            posix_fadvise(base_path_merge_fd_.get(), 0, 0, POSIX_FADV_DONTNEED);
+
             num_ops_merged = 0;
         }
 
@@ -387,6 +389,9 @@ bool MergeWorker::MergeOrderedOpsAsync() {
             return false;
         }
 
+        // Invalidate page-cache pages
+        posix_fadvise(base_path_merge_fd_.get(), 0, 0, POSIX_FADV_DONTNEED);
+
         SNAP_LOG(DEBUG) << "Block commit of size: " << snapuserd_->GetTotalBlocksToMerge();
 
         // Mark the block as merge complete
@@ -480,6 +485,9 @@ bool MergeWorker::MergeOrderedOps() {
             snapuserd_->SetMergeFailed(ra_block_index_);
             return false;
         }
+
+        // Invalidate page-cache pages
+        posix_fadvise(base_path_merge_fd_.get(), 0, 0, POSIX_FADV_DONTNEED);
 
         SNAP_LOG(DEBUG) << "Block commit of size: " << snapuserd_->GetTotalBlocksToMerge();
         // Mark the block as merge complete
