@@ -52,6 +52,7 @@ class SnapuserdSelinuxHelper final {
     void RelaunchFirstStageSnapuserd();
     void ExecSnapuserd();
     bool TestSnapuserdIsReady();
+    void ProcessSnapuserdUeventRequests(int request_fd);
 
     std::unique_ptr<SnapshotManager> sm_;
     BlockDevInitializer block_dev_init_;
@@ -63,10 +64,8 @@ class SnapuserdSelinuxHelper final {
 // will receive no new requests, and (2) the next copy we transition to can
 // own the socket.
 void CleanupSnapuserdSocket();
-
-// Kill an instance of snapuserd given a pid.
-void KillFirstStageSnapuserd(pid_t pid);
-
+// Send the specified signal to an instance of snapuserd given a pid.
+void SignalFirstStageSnapuserd(pid_t pid, int signal);
 // Save an open fd to /system/bin (in the ramdisk) into an environment. This is
 // used to later execveat() snapuserd.
 void SaveRamdiskPathToSnapuserd();

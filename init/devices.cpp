@@ -791,6 +791,8 @@ void DeviceHandler::HandleUevent(const Uevent& uevent) {
         devpath = "/dev/dm-user/" + uevent.device_name.substr(8);
     } else if (uevent.subsystem == "misc" && uevent.device_name == "vfio/vfio") {
         devpath = "/dev/" + uevent.device_name;
+    } else if (uevent.subsystem == "misc" && StartsWith(uevent.device_name, "ublk")) {
+        devpath = "/dev/" + uevent.device_name;
     } else {
         devpath = "/dev/" + Basename(uevent.path);
     }

@@ -14,19 +14,14 @@
 
 #pragma once
 
-#include <initializer_list>
-#include <string_view>
+#include <functional>
+#include <string>
 
 namespace android {
 namespace snapshot {
-bool SetThreadPriority(int priority);
-bool SetProfiles(std::initializer_list<std::string_view> profiles);
-bool KernelSupportsIoUring();
-bool GetUserspaceSnapshotsEnabledProperty();
-bool KernelSupportsCompressedSnapshots();
-bool CanUseUserspaceSnapshots();
-bool IsVendorFromAndroid12();
-bool KernelSupportsUblk();
-bool IsVabcWithUblkSupportEnabled();
+
+// Function signature for the uevent helper callback.
+using UeventHelperCallback = std::function<bool(const std::string&)>;
+
 }  // namespace snapshot
 }  // namespace android

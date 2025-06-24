@@ -432,10 +432,7 @@ class SnapshotManager final : public ISnapshotManager {
     // Resume the snapshot merge.
     bool ResumeSnapshotMerge();
 
-    enum class SnapshotDriver {
-        DM_SNAPSHOT,
-        DM_USER,
-    };
+    enum class SnapshotDriver { DM_SNAPSHOT, DM_USER, UBLK };
 
     // Add new public entries above this line.
 
@@ -550,11 +547,40 @@ class SnapshotManager final : public ISnapshotManager {
     bool MapSnapshot(LockedFile* lock, const std::string& name, const std::string& base_device,
                      const std::string& cow_device, const std::chrono::milliseconds& timeout_ms,
                      std::string* dev_path);
+    bool MapUserspaceCowDmUser(const std::string& name, const std::string& misc_name,
+                               const std::string& cow_file, const std::string& base_device,
+                               const std::string& base_path_merge, uint64_t base_sectors,
+                               const std::chrono::milliseconds& timeout_ms,
+                               std::string* out_final_path);
+    bool MapUserspaceCowUblk(const std::string& name, const std::string& misc_name,
+                             const std::string& cow_file, const std::string& base_device,
+                             const std::string& base_path_merge, uint64_t base_sectors,
+                             const std::chrono::milliseconds& timeout_ms,
+                             std::string* out_final_path);
+    bool CalculateBaseSectorsForUserspaceCow(const std::string& cow_file,
+                                             const std::string& base_path_merge,
+                                             uint64_t& out_base_sectors);
+    bool HandleDmUserDeviceCreation(const std::string& name, const std::string& misc_name,
+                                    uint64_t base_sectors,
+                                    const std::chrono::milliseconds& timeout_ms,
+                                    std::string* out_final_path);
+    bool HandleUblkDeviceCreation(const std::string& misc_name, uint64_t base_sectors,
+                                  const std::chrono::milliseconds& timeout_ms);
+    bool EnsureUblkPrerequisites(const std::chrono::milliseconds& timeout_ms);
+    std::optional<std::string> GetVerifiedUblkPath(const std::string& misc_name);
+    bool EnsureDmLinearOverUblk(const std::string& dm_device_name,
+                                const std::optional<std::string>& ublk_bdev_path_opt,
+                                uint64_t base_sectors, const std::chrono::milliseconds& timeout_ms);
+    bool VerifyUblkDeviceReady(const std::string& misc_name);
+    bool SetupDmLinearOverUblk(const std::string& snapshot_dm_name, uint64_t base_sectors,
+                               const std::string& ublk_bdev_path,
+                               const std::chrono::milliseconds& timeout_ms,
+                               std::string* out_final_dm_path);
 
-    // Create a dm-user device for a given snapshot.
-    bool MapDmUserCow(LockedFile* lock, const std::string& name, const std::string& cow_file,
-                      const std::string& base_device, const std::string& base_path_merge,
-                      const std::chrono::milliseconds& timeout_ms, std::string* path);
+    // Create a snapshot block device for a given snapshot (cow).
+    bool MapUserspaceCow(LockedFile* lock, const std::string& name, const std::string& cow_file,
+                         const std::string& base_device, const std::string& base_path_merge,
+                         const std::chrono::milliseconds& timeout_ms, std::string* path);
 
     // Map the source device used for dm-user.
     bool MapSourceDevice(LockedFile* lock, const std::string& name,
@@ -856,6 +882,12 @@ class SnapshotManager final : public ISnapshotManager {
     // Check if io_uring API's need to be used
     bool UpdateUsesIouring(LockedFile* lock);
 
+    // Check if we need to use Ublk
+    bool UpdateUsesUblk(LockedFile* lock);
+
+    // Check if we need to use Ublk without lock
+    bool UpdateUsesUblk();
+
     // Check if direct reads are enabled for the source image
     bool UpdateUsesODirect(LockedFile* lock);
 
@@ -884,6 +916,9 @@ class SnapshotManager final : public ISnapshotManager {
     // Returns true post OTA reboot if legacy snapuserd is required
     bool IsLegacySnapuserdPostReboot();
 
+    // Returns true if dm_name device has ublk device as parent
+    bool IsParentUblkDevice(const std::string& dm_name);
+
     android::dm::IDeviceMapper& dm_;
     std::unique_ptr<IDeviceInfo> device_;
     std::string metadata_dir_;
@@ -893,6 +928,7 @@ class SnapshotManager final : public ISnapshotManager {
     std::unique_ptr<SnapuserdClient> snapuserd_client_;
     std::unique_ptr<LpMetadata> old_partition_metadata_;
     std::optional<bool> is_snapshot_userspace_;
+    std::optional<bool> is_snapshot_ublk_;
     std::optional<bool> is_legacy_snapuserd_;
 };
 
