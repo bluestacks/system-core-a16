@@ -36,6 +36,7 @@
 #include "init.h"
 #include "service.h"
 #include "service_list.h"
+#include "util.h"
 
 using android::base::boot_clock;
 using android::base::make_scope_guard;
@@ -101,7 +102,7 @@ static pid_t ReapOneProcess() {
     if (siginfo.si_code == CLD_EXITED) {
         LOG(INFO) << name << " exited with status " << siginfo.si_status << wait_string;
     } else {
-        LOG(INFO) << name << " received signal " << siginfo.si_status << wait_string;
+        LOG(INFO) << name << " received " << SignalName(siginfo.si_status) << wait_string;
     }
 
     if (!service) {
