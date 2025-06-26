@@ -151,7 +151,8 @@ class MountEntry {
                     "-a",
                     mnt_fsname_.c_str(),
             };
-            logwrap_fork_execvp(arraysize(f2fs_argv), f2fs_argv, &st, false, LOG_KLOG, true,
+            // FIXME: enable more logs for debugging b/425186640
+            logwrap_fork_execvp(arraysize(f2fs_argv), f2fs_argv, &st, false, LOG_KLOG, false,
                                 nullptr);
         } else if (IsExt4()) {
             const char* ext4_argv[] = {
