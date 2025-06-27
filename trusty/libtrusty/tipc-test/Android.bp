@@ -33,6 +33,6 @@ cc_test {
         "-Werror",
     ],
     test_suites: [
-        "device-tests",
+        "device-pixel-tests",
     ],
 }
