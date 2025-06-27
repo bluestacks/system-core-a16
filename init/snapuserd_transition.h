@@ -58,6 +58,7 @@ class SnapuserdSelinuxHelper final {
     BlockDevInitializer block_dev_init_;
     pid_t old_pid_;
     std::vector<std::string> argv_;
+    bool using_ublk_ = false;
 };
 
 // Remove /dev/socket/snapuserd. This ensures that (1) the existing snapuserd
