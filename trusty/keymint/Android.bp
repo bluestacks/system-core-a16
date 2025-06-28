@@ -30,7 +30,6 @@ rust_defaults {
         "libkmr_wire",
         "libkmr_hal",
         "libtrusty-rs",
-        "liblibc",
         "liblog_rust",
     ],
     prefer_rlib: true,

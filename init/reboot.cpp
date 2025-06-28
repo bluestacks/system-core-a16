@@ -606,10 +606,10 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
 
 // zram is able to use backing device on top of a loopback device.
 // In order to unmount /data successfully, we have to kill the loopback device first
-#define ZRAM_DEVICE       "/dev/block/zram0"
-#define ZRAM_RESET        "/sys/block/zram0/reset"
-#define ZRAM_BACK_DEV     "/sys/block/zram0/backing_dev"
-#define ZRAM_INITSTATE    "/sys/block/zram0/initstate"
+#define ZRAM_DEVICE "/dev/block/zram0"
+#define ZRAM_RESET "/sys/block/zram0/reset"
+#define ZRAM_BACK_DEV "/sys/block/zram0/backing_dev"
+#define ZRAM_INITSTATE "/sys/block/zram0/initstate"
 static Result<void> KillZramBackingDevice() {
     std::string zram_initstate;
     if (!android::base::ReadFileToString(ZRAM_INITSTATE, &zram_initstate)) {
@@ -642,14 +642,12 @@ static Result<void> KillZramBackingDevice() {
     Timer swap_timer;
     LOG(INFO) << "swapoff() start...";
     if (swapoff(ZRAM_DEVICE) == -1) {
-        return ErrnoError() << "zram_backing_dev: swapoff (" << backing_dev << ")"
-                            << " failed";
+        return ErrnoError() << "zram_backing_dev: swapoff (" << backing_dev << ")" << " failed";
     }
     LOG(INFO) << "swapoff() took " << swap_timer;
 
     if (!WriteStringToFile("1", ZRAM_RESET)) {
-        return Error() << "zram_backing_dev: reset (" << backing_dev << ")"
-                       << " failed";
+        return Error() << "zram_backing_dev: reset (" << backing_dev << ")" << " failed";
     }
 
     if (!android::base::ReadFileToString(ZRAM_BACK_DEV, &backing_dev)) {
@@ -666,13 +664,11 @@ static Result<void> KillZramBackingDevice() {
     // clear loopback device
     unique_fd loop(TEMP_FAILURE_RETRY(open(backing_dev.c_str(), O_RDWR | O_CLOEXEC)));
     if (loop.get() < 0) {
-        return ErrnoError() << "zram_backing_dev: open(" << backing_dev << ")"
-                            << " failed";
+        return ErrnoError() << "zram_backing_dev: open(" << backing_dev << ")" << " failed";
     }
 
     if (ioctl(loop.get(), LOOP_CLR_FD, 0) < 0) {
-        return ErrnoError() << "zram_backing_dev: loop_clear (" << backing_dev << ")"
-                            << " failed";
+        return ErrnoError() << "zram_backing_dev: loop_clear (" << backing_dev << ")" << " failed";
     }
     LOG(INFO) << "zram_backing_dev: `" << backing_dev << "` is cleared successfully.";
     return {};
@@ -831,7 +827,6 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     Service* boot_anim = ServiceList::GetInstance().FindService("bootanim");
     Service* surface_flinger = ServiceList::GetInstance().FindService("surfaceflinger");
     if (boot_anim != nullptr && surface_flinger != nullptr && surface_flinger->IsRunning()) {
-
         if (do_shutdown_animation) {
             SetProperty("service.bootanim.exit", "0");
             SetProperty("service.bootanim.progress", "0");
@@ -964,14 +959,11 @@ static void EnterShutdown() {
  * @return true if "command" field is already set, and false if it's empty
  */
 static bool CommandIsPresent(bootloader_message* boot) {
-    if (boot->command[0] == '\0')
-        return false;
+    if (boot->command[0] == '\0') return false;
 
     for (size_t i = 0; i < arraysize(boot->command); ++i) {
-        if (boot->command[i] == '\0')
-            return true;
-        if (!isprint(boot->command[i]))
-            break;
+        if (boot->command[i] == '\0') return true;
+        if (!isprint(boot->command[i])) break;
     }
 
     memset(boot->command, 0, sizeof(boot->command));
@@ -1051,8 +1043,8 @@ void HandlePowerctlMessage(const std::string& command) {
                         return;
                     }
                 }
-            } else if (std::find(cmd_params.begin(), cmd_params.end(), "quiescent")
-                    != cmd_params.end()) { // Quiescent can be either subreason or details.
+            } else if (std::find(cmd_params.begin(), cmd_params.end(), "quiescent") !=
+                       cmd_params.end()) {  // Quiescent can be either subreason or details.
                 bootloader_message boot = {};
                 if (std::string err; !read_bootloader_message(&boot, &err)) {
                     LOG(ERROR) << "Failed to read bootloader message: " << err;

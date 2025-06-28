@@ -551,32 +551,21 @@ bool WriteFileAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
         return WriteValueToFile(value_, ProfileAction::RCT_PROCESS, uid, pid, logfailures_);
     }
 
-    DIR* d;
-    struct dirent* de;
-    char proc_path[255];
-    pid_t t_pid;
-
-    sprintf(proc_path, "/proc/%d/task", pid);
-    if (!(d = opendir(proc_path))) {
-        return false;
+    std::string proc_path = android::base::StringPrintf("/proc/%d/task", pid);
+    std::unique_ptr<DIR, decltype(&closedir)> d(opendir(proc_path.c_str()), closedir);
+    if (!d) {
+      return false;
     }
 
-    while ((de = readdir(d))) {
-        if (de->d_name[0] == '.') {
-            continue;
-        }
-
-        t_pid = atoi(de->d_name);
-
+    dirent* de;
+    while ((de = readdir(d.get()))) {
+        pid_t t_pid = atoi(de->d_name);
         if (!t_pid) {
             continue;
         }
 
         WriteValueToFile(value_, ProfileAction::RCT_TASK, uid, t_pid, logfailures_);
     }
-
-    closedir(d);
-
     return true;
 }
 
