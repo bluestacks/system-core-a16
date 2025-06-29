@@ -65,6 +65,7 @@ DEFINE_string(force_mode, DEFAULT_MODE,
               "Force testing older modes (vab-legacy) ignoring device config.");
 DEFINE_string(force_iouring_disable, "",
               "Force testing mode (iouring_disabled) - disable io_uring");
+DEFINE_string(force_ublk_mode, "auto", "Force ublk for testing: enabled, disabled, or auto.");
 DEFINE_string(compression_method, "gz", "Default compression algorithm.");
 
 namespace android {
@@ -121,6 +122,14 @@ class SnapshotTest : public ::testing::Test {
 
         LOG(INFO) << "Starting test: " << test_name_;
 
+        if (FLAGS_force_ublk_mode == "enabled") {
+            ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", "enabled"));
+        } else if (FLAGS_force_ublk_mode == "disabled") {
+            ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", "disabled"));
+        } else {
+            ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", ""));
+        }
+
         SKIP_IF_NON_VIRTUAL_AB();
         SKIP_IF_VENDOR_ON_ANDROID_S();
 
@@ -172,6 +181,8 @@ class SnapshotTest : public ::testing::Test {
         RETURN_IF_VENDOR_ON_ANDROID_S();
 
         LOG(INFO) << "Tearing down SnapshotTest test: " << test_name_;
+
+        ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", ""));
 
         lock_ = nullptr;
 

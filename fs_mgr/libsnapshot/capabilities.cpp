@@ -21,6 +21,8 @@
 #include <android-base/properties.h>
 #include <com_android_libsnapshot.h>
 
+#include <optional>
+
 namespace android {
 namespace snapshot {
 
@@ -41,7 +43,15 @@ static bool IsVabcWithUblkSupportEnabledByFlag() {
 }
 
 bool IsUblkEnabled() {
+    // Allow override for testing ublk mode
+    std::string test_mode = android::base::GetProperty("snapuserd.test.ublk.force_mode", "");
     bool property_enabled = android::base::GetBoolProperty("ro.virtual_ab.ublk.enabled", false);
+    if (test_mode == "enabled") {
+        property_enabled = true;
+    } else if (test_mode == "disabled") {
+        property_enabled = false;
+    }
+
     bool flag_enabled = IsVabcWithUblkSupportEnabledByFlag();
     bool kernel_support = KernelSupportsUblk();
 
