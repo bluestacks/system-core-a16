@@ -32,6 +32,7 @@
 #include <android-base/scopeguard.h>
 #include <android-base/strings.h>
 #include <fs_mgr/file_wait.h>
+#include <libsnapshot/capabilities.h>
 #include <snapuserd/dm_user_block_server.h>
 #include <snapuserd/snapuserd_client.h>
 #include <snapuserd/ublk_block_server.h>
@@ -217,7 +218,7 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
         if (out[1] == "second_stage_socket_handoff") {
             return Sendmsg(fd, "success");
         }
-        if (out[1] == "ublk" && KernelSupportsUblk()) {
+        if (out[1] == "ublk" && IsUblkEnabled()) {
             return Sendmsg(fd, "success");
         }
         return Sendmsg(fd, "fail");

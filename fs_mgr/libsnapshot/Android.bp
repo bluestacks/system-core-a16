@@ -82,8 +82,14 @@ cc_defaults {
 }
 
 filegroup {
+    name: "libsnapshot_capabilities_sources",
+    srcs: ["capabilities.cpp"],
+}
+
+filegroup {
     name: "libsnapshot_sources",
     srcs: [
+        ":libsnapshot_capabilities_sources",
         "android/snapshot/snapshot.proto",
         "device_info.cpp",
         "snapshot.cpp",
@@ -101,6 +107,7 @@ cc_library_headers {
     name: "libsnapshot_headers",
     recovery_available: true,
     defaults: ["libsnapshot_defaults"],
+    export_include_dirs: ["include"],
 }
 
 cc_library_static {

@@ -46,6 +46,7 @@
 #include <liblp/property_fetcher.h>
 
 #include <android/snapshot/snapshot.pb.h>
+#include <libsnapshot/capabilities.h>
 #include <libsnapshot/snapshot_stats.h>
 #include "device_info.h"
 #include "partition_cow_creator.h"
@@ -4007,7 +4008,7 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.verify_block_size", 0));
         status.set_num_verification_threads(
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.num_verify_threads", 0));
-        status.set_ublk_snapshots_enabled(GetUblkEnabledProperty());
+        status.set_ublk_snapshots_enabled(IsUblkEnabled());
         is_snapshot_ublk_.emplace(status.ublk_snapshots_enabled());
         LOG(INFO) << "Using ublk snapshots: " << status.ublk_snapshots_enabled();
     } else if (legacy_compression) {
@@ -5174,7 +5175,7 @@ bool SnapshotManager::BootFromSnapshotsWithoutSlotSwitch() {
     update_status.set_state(UpdateState::Initiated);
     update_status.set_userspace_snapshots(true);
     update_status.set_using_snapuserd(true);
-    update_status.set_ublk_snapshots_enabled(GetUblkEnabledProperty());
+    update_status.set_ublk_snapshots_enabled(IsUblkEnabled());
     LOG(INFO) << "ublk enabled? :" << update_status.ublk_snapshots_enabled();
     if (!WriteSnapshotUpdateStatus(lock.get(), update_status)) {
         return false;

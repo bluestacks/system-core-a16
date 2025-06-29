@@ -18,8 +18,8 @@
 #include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <gflags/gflags.h>
+#include <libsnapshot/capabilities.h>
 #include <snapuserd/snapuserd_client.h>
-
 #include <storage_literals/storage_literals.h>
 
 #include "snapuserd_daemon.h"
@@ -147,6 +147,10 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
 
     MaskAllSignalsExceptIntAndTerm();
 
+    if (!FLAGS_ublk) {
+        // Check if we should use Ublk for snapshots
+        FLAGS_ublk = IsUblkEnabled();
+    }
     // Set block_server_opener_
     user_server_.Initialize(FLAGS_ublk);
 

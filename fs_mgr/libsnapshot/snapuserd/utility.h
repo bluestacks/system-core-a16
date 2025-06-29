@@ -26,7 +26,6 @@ bool GetUserspaceSnapshotsEnabledProperty();
 bool KernelSupportsCompressedSnapshots();
 bool CanUseUserspaceSnapshots();
 bool IsVendorFromAndroid12();
-bool KernelSupportsUblk();
-bool IsVabcWithUblkSupportEnabled();
+
 }  // namespace snapshot
 }  // namespace android

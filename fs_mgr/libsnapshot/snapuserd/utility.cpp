@@ -99,22 +99,5 @@ bool CanUseUserspaceSnapshots() {
     return true;
 }
 
-bool IsVabcWithUblkSupportEnabled() {
-    return com::android::libsnapshot::vabc_with_ublk_support();
-}
-
-bool KernelSupportsUblk() {
-    struct utsname uts{};
-    unsigned int major, minor;
-
-    uname(&uts);
-    if (sscanf(uts.release, "%u.%u", &major, &minor) != 2) {
-        return false;
-    }
-
-    // We will only support kernels from 6.1 onwards
-    return major > 6 || (major == 6 && minor >= 1);
-}
-
 }  // namespace snapshot
 }  // namespace android
