@@ -65,6 +65,8 @@ init_device_sources = [
     "block_dev_initializer.cpp",
     "bootchart.cpp",
     "builtins.cpp",
+    "coldboot.cpp",
+    "coldboot_subprocess.cpp",
     "devices.cpp",
     "firmware_handler.cpp",
     "first_stage_console.cpp",
