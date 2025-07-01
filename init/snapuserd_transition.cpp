@@ -64,7 +64,7 @@ static constexpr char kSnapuserdFirstStageInfoVar[] = "FIRST_STAGE_SNAPUSERD_INF
 static constexpr char kSnapuserdLabel[] = "u:object_r:snapuserd_exec:s0";
 static constexpr char kSnapuserdSocketLabel[] = "u:object_r:snapuserd_socket:s0";
 
-void LaunchFirstStageSnapuserd() {
+void LaunchFirstStageSnapuserd(bool use_ublk) {
     SocketDescriptor socket_desc;
     socket_desc.name = android::snapshot::kSnapuserdSocket;
     socket_desc.type = SOCK_STREAM;
@@ -87,10 +87,15 @@ void LaunchFirstStageSnapuserd() {
     if (pid == 0) {
         socket->Publish();
 
-        char* arg0 = const_cast<char*>(kSnapuserdPath);
-        char arg1[] = "-user_snapshot";
-        char* const argv[] = {arg0, arg1, nullptr};
-        if (execv(arg0, argv) < 0) {
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(kSnapuserdPath));
+        argv.push_back(const_cast<char*>("-user_snapshot"));
+        if (use_ublk) {
+            argv.push_back(const_cast<char*>("-ublk"));
+        }
+        argv.push_back(nullptr);
+
+        if (execv(argv[0], argv.data()) < 0) {
             PLOG(FATAL) << "Cannot launch snapuserd; execv failed";
         }
         _exit(127);

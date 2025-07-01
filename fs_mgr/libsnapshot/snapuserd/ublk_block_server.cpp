@@ -88,8 +88,9 @@ static struct ublksrv_tgt_type snapshot_tgt_type = {
         //.recovery_tgt = snapshot_recovery_tgt,
 };
 
-UblkDeviceInfo::UblkDeviceInfo(const std::string& name, uint64_t num_sectors)
-    : data_{}, num_sectors_(num_sectors), name_(name) {
+UblkDeviceInfo::UblkDeviceInfo(const std::string& name, uint64_t num_sectors, int num_queues,
+                               UeventHelperCallback callback)
+    : data_{}, num_sectors_(num_sectors), name_(name), uevent_helper_(std::move(callback)) {
     argv_storage_ = {name_, std::to_string(num_sectors_)};
     argv_pointers_ = {argv_storage_[0].data(), argv_storage_[1].data()};
 
@@ -98,7 +99,7 @@ UblkDeviceInfo::UblkDeviceInfo(const std::string& name, uint64_t num_sectors)
     data_.tgt_type = "android_snapshot";
     data_.queue_depth = kDefaultQueueDepth;
     data_.flags = 0;
-    data_.nr_hw_queues = kDefaultHwQueues;
+    data_.nr_hw_queues = num_queues;
     data_.max_io_buf_bytes = kDefaultMaxIoBufBytes;
     data_.run_dir = nullptr;
     data_.tgt_argc = argv_pointers_.size();  // Will be 2
@@ -111,6 +112,26 @@ UblkDeviceInfo::UblkDeviceInfo(const std::string& name, uint64_t num_sectors)
         LOG(DEBUG) << "ublksrv_ctrl_init successful for " << name_
                    << ", dev_id: " << ublksrv_ctrl_get_dev_info(ctrl_dev_)->dev_id;
     }
+}
+
+bool UblkDeviceInfo::InitDev() {
+    LOG(INFO) << "UblkDeviceInfo::InitDev() one-time initialization started for" << name_;
+    if (uevent_helper_) {
+        uevent_helper_(GetUblockCtrDeviceName());
+    }
+    auto ublk_char_dev = "/dev/ublkc" + std::to_string(GetDeviceId());
+    if (!WaitForFile(ublk_char_dev, 1s)) {
+        LOG(ERROR) << "InitDev: Failed waiting for " << ublk_char_dev;
+        return false;
+    }
+    dev_ = const_cast<struct ublksrv_dev*>(ublksrv_dev_init(ctrl_dev_));
+    if (!dev_) {
+        LOG(ERROR) << "ublksrv_dev_init failed for " << name_;
+        return false;
+    }
+    SetDevReady();
+    LOG(INFO) << "InitDev done for " << name_;
+    return true;
 }
 
 UblkBlockServer::UblkBlockServer(const std::string& misc_name,
@@ -127,20 +148,23 @@ void UblkBlockServer::Open(Delegate* delegate, size_t buffer_size) {
 }
 
 bool UblkBlockServer::Initialize() {
-    // Send uevent request for control device /dev/ublkc
-    if (uevent_helper_) {
-        uevent_helper_(device_info_->GetUblockCtrDeviceName());
-    }
-    auto ret = device_info_->InitDev();
-    if (!ret) return ret;
-
-    SNAP_LOG(DEBUG) << "before ublksrv_queue_init" << qid_;
-    q_ = ublksrv_queue_init(device_info_->dev(), qid_, (void*)this);
-    if (!q_) {
-        SNAP_LOG(ERROR) << "ublksrv_queue_init failed";
+    // always do the InitDev() in queue 0.
+    if (qid_ == 0) {
+        if (!device_info_->InitDev()) {
+            SNAP_LOG(ERROR) << "Device initialization failed for queue " << qid_;
+            return false;
+        }
+    } else if (!device_info_->WaitForDevReady()) {
+        SNAP_LOG(ERROR) << "Device not ready for queue " << qid_;
         return false;
     }
-    SNAP_LOG(DEBUG) << "ublksrv_queue_init success.";
+
+    q_ = ublksrv_queue_init(device_info_->dev(), qid_, (void*)this);
+    if (!q_) {
+        SNAP_LOG(ERROR) << "ublksrv_queue_init failed for " << qid_;
+        return false;
+    }
+    SNAP_LOG(DEBUG) << "ublksrv_queue_init success for " << qid_;
     q_inited_ = true;
     return true;
 }
@@ -165,7 +189,7 @@ bool UblkBlockServer::ProcessRequests() {
     // Also ProcessRequest() is called within a while(true) loop,
     // so we don't need a loop here.
     if (ublksrv_process_io(q_) < 0) {
-        SNAP_LOG(WARNING) << "ublk dev queue " << q_->q_id << " exiting";
+        SNAP_LOG(INFO) << "ublk dev queue " << q_->q_id << " exiting";
         return false;
     }
 
@@ -180,10 +204,10 @@ bool UblkBlockServer::ProcessRequest(const struct ublk_io_data* data) {
     // Reset the output buffer.
     buffer_.ResetBufferOffset();
     unsigned ublk_op = ublksrv_get_op(iod);
-    SNAP_LOG(DEBUG) << "UblkDaemon: request->op: " << ublk_op;
-    SNAP_LOG(DEBUG) << "UblkDaemon: request->flags: " << ublksrv_get_flags(iod);
-    SNAP_LOG(DEBUG) << "UblkDaemon: request->len: " << (iod->nr_sectors << SECTOR_SHIFT);
-    SNAP_LOG(DEBUG) << "UblkDaemon: request->sector: " << iod->start_sector;
+    SNAP_LOG(VERBOSE) << "UblkDaemon: request->op: " << ublk_op;
+    SNAP_LOG(VERBOSE) << "UblkDaemon: request->flags: " << ublksrv_get_flags(iod);
+    SNAP_LOG(VERBOSE) << "UblkDaemon: request->len: " << (iod->nr_sectors << SECTOR_SHIFT);
+    SNAP_LOG(VERBOSE) << "UblkDaemon: request->sector: " << iod->start_sector;
     switch (ublk_op) {
         case UBLK_IO_OP_READ:
             io_done = delegate_->RequestSectors(iod->start_sector, iod->nr_sectors << SECTOR_SHIFT);
@@ -235,9 +259,6 @@ UblkBlockServerOpener::UblkBlockServerOpener(const std::string& misc_name,
     : misc_name_(misc_name), device_info_(device_info), queues_(0) {
     SNAP_LOG(DEBUG) << "UblkBlockServerOpener created";
     if (callback) uevent_helper_ = std::move(callback);
-    // TODOUBLK: b/414812023 : Maybe create more queues here, will be inited later in
-    // ProcessRequests().
-    server_ = std::make_unique<UblkBlockServer>(misc_name, device_info_, queues_++, uevent_helper_);
 }
 
 UblkBlockServerOpener::~UblkBlockServerOpener() {
@@ -246,10 +267,11 @@ UblkBlockServerOpener::~UblkBlockServerOpener() {
 
 std::unique_ptr<IBlockServer> UblkBlockServerOpener::Open(IBlockServer::Delegate* delegate,
                                                           size_t buffer_size) {
-    server_->Open(delegate, buffer_size);
-    // TODOUBLK: b/414812023 : Here right now we have a single queue. We may need to return from
-    // created queues.
-    return std::move(server_);
+    auto server =
+            std::make_unique<UblkBlockServer>(misc_name_, device_info_, queues_++, uevent_helper_);
+    server->Open(delegate, buffer_size);
+    servers_.push_back(std::move(server));
+    return std::move(servers_.back());
 }
 
 std::shared_ptr<UblkBlockServerOpener> UblkDeviceManager::CreateUblkOpener(
@@ -265,26 +287,6 @@ std::shared_ptr<UblkBlockServerOpener> UblkDeviceManager::CreateUblkOpener(
                                                           uevent_helper_);
     device_openers_.emplace(device_name, opener);
     return opener;
-}
-
-bool UblkDeviceInfo::InitDev() {
-    if (dev_initialized_) {
-        return true;
-    }
-    auto ublk_char_dev = "/dev/ublkc" + std::to_string(GetDeviceId());
-
-    if (!WaitForFile(ublk_char_dev, 1s)) {
-        LOG(ERROR) << "Failed waiting for " << ublk_char_dev;
-        return false;
-    }
-    dev_ = const_cast<struct ublksrv_dev*>(ublksrv_dev_init(ctrl_dev_));
-    if (!dev_) {
-        LOG(ERROR) << "ublksrv_dev_init failed for " << name_;
-        return false;
-    }
-    LOG(INFO) << "ublksrv_dev_init done for " << name_;
-    dev_initialized_ = true;
-    return true;
 }
 
 uint64_t UblkDeviceInfo::GetNumSectors() {
@@ -309,6 +311,23 @@ UblkDeviceInfo::~UblkDeviceInfo() {
         ublksrv_ctrl_deinit(ctrl_dev_);
         ctrl_dev_ = nullptr;
     }
+}
+
+void UblkDeviceInfo::SetDevReady() {
+    {
+        std::lock_guard<std::mutex> lock(dev_ready_mutex_);
+        dev_is_ready_ = true;
+    }
+    dev_ready_cv_.notify_all();
+}
+
+bool UblkDeviceInfo::WaitForDevReady() {
+    std::unique_lock<std::mutex> lock(dev_ready_mutex_);
+    if (!dev_ready_cv_.wait_for(lock, std::chrono::seconds(5), [this] { return dev_is_ready_; })) {
+        LOG(ERROR) << "Timed out waiting for device to be ready: " << name_;
+        return false;
+    }
+    return true;
 }
 
 bool UblkDeviceManager::CreateDmLinearDevice(UblkDeviceInfo& device_info) {
@@ -366,6 +385,12 @@ bool UblkDeviceManager::StartDevice(const std::string& device_name) {
         LOG(ERROR) << "Device not found: " << device_name;
         return false;
     }
+
+    if (!deviceInfo->WaitForDevReady()) {
+        LOG(ERROR) << "StartDevice: Timeout Device " << device_name << " not ready";
+        return false;
+    }
+
     // ublksrv_ctrl_start_dev tells ublk driver to expose /dev/ublkbN
     // That's why it is necessary to start the dev in-order to create
     // dm-linear device on top of the /dev/ublkbN.
@@ -421,10 +446,11 @@ bool UblkDeviceManager::StopDevice(const std::string& device_name) {
     return true;
 }
 
-bool UblkDeviceManager::CreateDevice(const std::string& device_name, uint64_t num_sectors) {
-    auto device_info = std::make_shared<UblkDeviceInfo>(device_name, num_sectors);
+bool UblkDeviceManager::CreateDevice(const std::string& device_name, uint64_t num_sectors,
+                                     int num_queues) {
+    auto device_info =
+            std::make_shared<UblkDeviceInfo>(device_name, num_sectors, num_queues, uevent_helper_);
 
-    // Check if UblkDeviceInfo construction was successful
     if (!device_info->ctrl_dev()) {
         LOG(ERROR) << "Failed to initialize UblkDeviceInfo for " << device_name;
         return false;

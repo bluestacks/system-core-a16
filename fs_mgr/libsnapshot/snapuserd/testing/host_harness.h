@@ -70,7 +70,8 @@ class TestBlockServerFactory final : public IBlockServerFactory {
     std::shared_ptr<IBlockServerOpener> CreateOpener(const std::string& misc_name) override;
     std::shared_ptr<TestBlockServerOpener> CreateTestOpener(const std::string& misc_name);
     bool DeleteQueue(const std::string& misc_name);
-    bool CreateDevice(const std::string& /*deviceName*/, uint64_t /*deviceSize*/) override {
+    bool CreateDevice(const std::string& /*deviceName*/, uint64_t /*deviceSize*/,
+                      int /*num_queues*/) override {
         return true;
     };
     bool StartDevice(const std::string& /*deviceName*/) override { return true; };

@@ -67,6 +67,7 @@ DEFINE_string(force_iouring_disable, "",
               "Force testing mode (iouring_disabled) - disable io_uring");
 DEFINE_string(force_ublk_mode, "auto", "Force ublk for testing: enabled, disabled, or auto.");
 DEFINE_string(compression_method, "gz", "Default compression algorithm.");
+DEFINE_int32(num_ublk_threads, 0, "Number of ublk threads to use for testing.");
 
 namespace android {
 namespace snapshot {
@@ -130,6 +131,11 @@ class SnapshotTest : public ::testing::Test {
             ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", ""));
         }
 
+        if (FLAGS_num_ublk_threads > 0) {
+            ASSERT_TRUE(android::base::SetProperty("snapuserd.test.num_worker_threads",
+                                                   std::to_string(FLAGS_num_ublk_threads)));
+        }
+
         SKIP_IF_NON_VIRTUAL_AB();
         SKIP_IF_VENDOR_ON_ANDROID_S();
 
@@ -183,6 +189,7 @@ class SnapshotTest : public ::testing::Test {
         LOG(INFO) << "Tearing down SnapshotTest test: " << test_name_;
 
         ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", ""));
+        ASSERT_TRUE(android::base::SetProperty("snapuserd.test.num_worker_threads", ""));
 
         lock_ = nullptr;
 

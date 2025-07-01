@@ -165,6 +165,8 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
             return Sendmsg(fd, "fail");
         }
         if (is_ublk_enabled_) {
+            // ublk device can only be started after all queues are ready
+            // so this cannot be done before StartHandler()
             LOG(INFO) << "Starting device " << out[1];
             block_server_factory_->StartDevice(out[1]);
             LOG(INFO) << "Device " << out[1] << " started";
@@ -269,7 +271,8 @@ bool UserSnapshotServer::Receivemsg(android::base::borrowed_fd fd, const std::st
             LOG(ERROR) << "Malformed create message, " << out.size() << " parts";
             return Sendmsg(fd, "fail");
         }
-        if (!block_server_factory_->CreateDevice(out[1], strtoull(out[2].c_str(), nullptr, 10))) {
+        if (!block_server_factory_->CreateDevice(out[1], strtoull(out[2].c_str(), nullptr, 10),
+                                                 1)) {
             LOG(ERROR) << "Failed to create snapshot device for " << out[1];
             return Sendmsg(fd, "fail");
         }
@@ -459,6 +462,13 @@ std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(const std::string&
         options.num_worker_threads = 1;
     }
 
+    // Allow override for testing
+    int num_threads_override =
+            android::base::GetIntProperty("snapuserd.test.num_worker_threads", 0);
+    if (num_threads_override > 0) {
+        options.num_worker_threads = num_threads_override;
+    }
+
     if (android::base::EndsWith(misc_name, "-init") || is_socket_present_ ||
         (access(kBootSnapshotsWithoutSlotSwitch, F_OK) == 0)) {
         options.skip_verification = true;
@@ -471,8 +481,8 @@ std::shared_ptr<HandlerThread> UserSnapshotServer::AddHandler(const std::string&
 
     LOG(INFO) << "Base path " << base_path_merge << " has " << num_sectors << " sectors";
     if (is_ublk_enabled_) {
-        CHECK(block_server_factory_->CreateDevice(misc_name, num_sectors));
-        options.num_worker_threads = 1;
+        CHECK(block_server_factory_->CreateDevice(misc_name, num_sectors,
+                                                  options.num_worker_threads));
     }
     auto opener = block_server_factory_->CreateOpener(misc_name);
 

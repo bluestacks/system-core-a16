@@ -16,6 +16,9 @@
 
 #include <android-base/unique_fd.h>
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 
 #include <snapuserd/block_server.h>
@@ -53,7 +56,6 @@ class UblkBlockServer : public IBlockServer {
     BufferSink buffer_;
     const struct ublksrv_queue* q_;
     std::shared_ptr<UblkDeviceInfo> device_info_;
-    int queue_depth_;
     int qid_;
     const struct ublk_io_data* current_;
     uint64_t progress_;
@@ -71,10 +73,14 @@ class UblkDeviceInfo {
     uint64_t num_sectors_;
     std::string name_;
     std::string linear_path_;
-    bool dev_initialized_ = false;
+    UeventHelperCallback uevent_helper_;
+    std::mutex dev_ready_mutex_;
+    std::condition_variable dev_ready_cv_;
+    bool dev_is_ready_ = false;
 
   public:
-    UblkDeviceInfo(const std::string& name, uint64_t num_sectors);
+    UblkDeviceInfo(const std::string& name, uint64_t num_sectors, int num_queues,
+                   UeventHelperCallback callback = nullptr);
     ~UblkDeviceInfo();
     uint64_t GetSize() const { return num_sectors_ << SECTOR_SHIFT; }
     uint64_t GetNumSectors();
@@ -90,6 +96,8 @@ class UblkDeviceInfo {
     bool InitDev();
     void set_linear_path(const std::string& path) { linear_path_ = path; }
     const std::string& linear_path() const { return linear_path_; }
+    bool WaitForDevReady();
+    void SetDevReady();
 };
 class UblkBlockServerOpener : public IBlockServerOpener {
   public:
@@ -102,9 +110,8 @@ class UblkBlockServerOpener : public IBlockServerOpener {
     UeventHelperCallback GetUeventHelper() { return uevent_helper_; }
 
   private:
-    // TODOUBLK: b/414812023 : This is currently single server_ which is effectively queue.
     // This can be multiple queues as defined by ro property.
-    std::unique_ptr<UblkBlockServer> server_;
+    std::vector<std::unique_ptr<UblkBlockServer>> servers_;
     std::string misc_name_;
     std::shared_ptr<UblkDeviceInfo> device_info_;
     int queues_;
@@ -113,7 +120,7 @@ class UblkBlockServerOpener : public IBlockServerOpener {
 
 class UblkDeviceManager {
   public:
-    bool CreateDevice(const std::string& device_name, uint64_t num_sectors);
+    bool CreateDevice(const std::string& device_name, uint64_t num_sectors, int num_queues);
     std::shared_ptr<UblkDeviceInfo> GetDeviceInfo(const std::string& device_name) {
         auto it = devices_.find(device_name);
         if (it != devices_.end()) {
@@ -145,8 +152,9 @@ class UblkBlockServerFactory : public IBlockServerFactory {
         return device_manager_.CreateUblkOpener(misc_name);
     }
 
-    bool CreateDevice(const std::string& device_name, uint64_t num_sectors) {
-        return device_manager_.CreateDevice(device_name, num_sectors);
+    bool CreateDevice(const std::string& device_name, uint64_t num_sectors,
+                      int num_queues) override {
+        return device_manager_.CreateDevice(device_name, num_sectors, num_queues);
     }
     bool StartDevice(const std::string& device_name) {
         return device_manager_.StartDevice(device_name);

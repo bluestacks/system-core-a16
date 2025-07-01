@@ -30,7 +30,7 @@ namespace android {
 namespace init {
 
 // Fork and exec a new copy of snapuserd.
-void LaunchFirstStageSnapuserd();
+void LaunchFirstStageSnapuserd(bool use_ublk);
 
 class SnapuserdSelinuxHelper final {
     using SnapshotManager = android::snapshot::SnapshotManager;

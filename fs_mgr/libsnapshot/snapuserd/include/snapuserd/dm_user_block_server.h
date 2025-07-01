@@ -63,7 +63,8 @@ class DmUserBlockServerOpener : public IBlockServerOpener {
 class DmUserBlockServerFactory : public IBlockServerFactory {
   public:
     std::shared_ptr<IBlockServerOpener> CreateOpener(const std::string& misc_name) override;
-    bool CreateDevice(const std::string& /*deviceName*/, uint64_t /*deviceSize*/) override {
+    bool CreateDevice(const std::string& /*deviceName*/, uint64_t /*deviceSize*/,
+                      int /*num_queues*/) override {
         return true;
     };
     bool StartDevice(const std::string& /*deviceName*/) override { return true; };
