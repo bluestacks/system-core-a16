@@ -303,7 +303,7 @@ void FirmwareHandler::HandleUevent(const Uevent& uevent) {
 void FirmwareHandler::EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) {
     if (uevent.subsystem != "firmware" || uevent.action != "add") return;
 
-    thread_pool.Enqueue([&uevent, this] { HandleUeventInternal(uevent); });
+    thread_pool.Enqueue(kPriorityFirmware, [&uevent, this] { HandleUeventInternal(uevent); });
 }
 
 }  // namespace init

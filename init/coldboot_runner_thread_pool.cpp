@@ -37,7 +37,8 @@ void ColdbootRunnerThreadPool::StartInBackground() {
     }
     if (enable_parallel_restorecon_) {
         for (const std::string& restorecon : restorecon_queue_) {
-            thread_pool_.Enqueue([&restorecon] { RestoreconRecurse(restorecon); });
+            thread_pool_.Enqueue(kPriorityRestorecon,
+                                 [&restorecon] { RestoreconRecurse(restorecon); });
         }
     }
 }

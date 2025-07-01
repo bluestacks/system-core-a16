@@ -811,7 +811,7 @@ void DeviceHandler::ColdbootDone() {
 }
 
 void DeviceHandler::EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) {
-    thread_pool.Enqueue([this, uevent]() { HandleUevent(uevent); });
+    thread_pool.Enqueue(kPriorityDevice, [this, uevent]() { HandleUevent(uevent); });
 }
 
 DeviceHandler::DeviceHandler(std::vector<Permissions> dev_permissions,

@@ -29,6 +29,14 @@
 namespace android {
 namespace init {
 
+struct Task {
+    std::function<void()> fn;
+    int priority;
+
+    // Smaller `priority` is prioritized in the queue.
+    bool operator<(const Task& other) const { return priority > other.priority; }
+};
+
 /**
  * A thread pool that executes tasks in parallel.
  */
@@ -43,16 +51,17 @@ class ThreadPool {
     ThreadPool(size_t num_threads = std::thread::hardware_concurrency());
 
     /**
-     * Enqueues a task with its arguments.
+     * Enqueues a task and its arguments with the given priority.
      *
+     * @param priority The priority of the task. The smaller, the more prioritized.
      * @param f The task function.
      */
     template <class F, class... Args>
-    void Enqueue(F&& f) {
+    void Enqueue(int priority, F&& f) {
         {
             std::lock_guard<std::mutex> lock(task_lock_);
             CHECK(state_ != State::Stopped);
-            tasks_.push(std::forward<F>(f));
+            tasks_.push(Task{std::forward<F>(f), priority});
         }
         task_cond_.notify_one();
     }
@@ -79,7 +88,7 @@ class ThreadPool {
     std::vector<std::thread> workers_ GUARDED_BY(thread_lock_);
     std::mutex task_lock_;
     std::condition_variable task_cond_;
-    std::queue<std::function<void()>> tasks_ GUARDED_BY(task_lock_);
+    std::priority_queue<Task> tasks_ GUARDED_BY(task_lock_);
     size_t busy_threads_ GUARDED_BY(task_lock_){0};
     State state_ GUARDED_BY(task_lock_){State::Running};
 

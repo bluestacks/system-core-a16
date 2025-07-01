@@ -49,7 +49,7 @@ void ModaliasHandler::EnqueueUevent(const Uevent& uevent, ThreadPool& thread_poo
 }
 
 void ModaliasHandler::EnqueueModule(ThreadPool& thread_pool, const std::string& module) {
-    thread_pool.Enqueue([this, &thread_pool, module]() {
+    thread_pool.Enqueue(kPriorityModalias, [this, &thread_pool, module]() {
         android::base::Result<void> res = modprobe::InitModule(module, module_options_);
         if (res.ok() || res.error().code() == EEXIST) {
             dependency_graph_.MarkModuleLoaded(module);

@@ -3,10 +3,19 @@
 #include <atomic>
 #include <latch>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace android {
 namespace init {
+
+using ::testing::ElementsAre;
+
+enum TestPriority {
+    kPriorityHigh = 0,
+    kPriorityDefault = 1,
+    kPriorityLow = 2,
+};
 
 TEST(ThreadPoolTest, ImmediateStopWorks) {
     ThreadPool pool(4);
@@ -17,7 +26,7 @@ TEST(ThreadPoolTest, ImmediateStopWorks) {
 TEST(ThreadPoolTest, DoesNotStopWhenTaskQueueIsEmptyBeforeWait) {
     ThreadPool pool(4);
     std::latch finished(1);
-    pool.Enqueue([&] { finished.count_down(); });
+    pool.Enqueue(kPriorityDefault, [&] { finished.count_down(); });
 
     // Wait for the first task to complete.
     finished.wait();
@@ -25,7 +34,7 @@ TEST(ThreadPoolTest, DoesNotStopWhenTaskQueueIsEmptyBeforeWait) {
     // Now the queue is empty, but the pool is still running.
 
     bool executed = false;
-    pool.Enqueue([&] { executed = true; });
+    pool.Enqueue(kPriorityDefault, [&] { executed = true; });
 
     pool.Wait();
     // The second task should have been executed.
@@ -35,11 +44,11 @@ TEST(ThreadPoolTest, DoesNotStopWhenTaskQueueIsEmptyBeforeWait) {
 TEST(ThreadPoolTest, EnqueueAfterStopFails) {
     ThreadPool pool(4);
     bool executed = false;
-    pool.Enqueue([&] { executed = true; });
+    pool.Enqueue(kPriorityDefault, [&] { executed = true; });
     pool.Wait();
     EXPECT_TRUE(executed);
     // The pool is stopped, so it should crash when a new task is enqueued.
-    EXPECT_DEATH(pool.Enqueue([] {}), "");
+    EXPECT_DEATH(pool.Enqueue(kPriorityDefault, [] {}), "");
 }
 
 TEST(ThreadPoolTest, ThreadNumberDoesNotChangeAfterQueueIsEmpty) {
@@ -47,7 +56,7 @@ TEST(ThreadPoolTest, ThreadNumberDoesNotChangeAfterQueueIsEmpty) {
 
     // Enqueue one task and wait for it to complete.
     std::latch finished(1);
-    pool.Enqueue([&] { finished.count_down(); });
+    pool.Enqueue(kPriorityDefault, [&] { finished.count_down(); });
     finished.wait();
 
     // Now the queue is empty, but the pool is still running.
@@ -55,7 +64,7 @@ TEST(ThreadPoolTest, ThreadNumberDoesNotChangeAfterQueueIsEmpty) {
     // Enqueue two tasks, and check if the number of threads in the pool is still 2.
     std::latch completed(3);
     for (size_t i = 0; i < 2; ++i) {
-        pool.Enqueue([&] { completed.arrive_and_wait(); });
+        pool.Enqueue(kPriorityDefault, [&] { completed.arrive_and_wait(); });
     }
     completed.arrive_and_wait();
     // We would not reach here if the number of worker threads in the pool was not 2.
@@ -77,7 +86,7 @@ TEST(ThreadPoolTest, EnqueueTasksWhileStopping) {
     std::latch cont(1);
 
     // Enqueue a task that will block, ensuring the pool has a busy thread.
-    pool.Enqueue([&] {
+    pool.Enqueue(kPriorityDefault, [&] {
         counter++;
         started.count_down();
         cont.wait();
@@ -89,7 +98,7 @@ TEST(ThreadPoolTest, EnqueueTasksWhileStopping) {
     ThreadPoolForTest t;
     t.SetWaitCallbackForTest(pool, [&] {
         // Now the thread pool is in State::Stopping.
-        pool.Enqueue([&counter] { counter++; });
+        pool.Enqueue(kPriorityDefault, [&counter] { counter++; });
         // Unblock the first task.
         cont.count_down();
     });
@@ -98,6 +107,43 @@ TEST(ThreadPoolTest, EnqueueTasksWhileStopping) {
 
     // All tasks should have been executed.
     EXPECT_EQ(counter, 2);
+}
+
+TEST(ThreadPoolTest, PriorityIsPreserved) {
+    ThreadPool pool(1);
+    std::latch started(1);
+    std::latch cont(1);
+    std::vector<TestPriority> execution_order;
+    std::mutex m;
+
+    pool.Enqueue(kPriorityDefault, [&] {
+        started.count_down();
+        cont.wait();
+    });
+
+    started.wait();
+    // The only worker thread is now blocked.
+
+    pool.Enqueue(kPriorityLow, [&] {
+        std::lock_guard lock(m);
+        execution_order.push_back(kPriorityLow);
+    });
+
+    pool.Enqueue(kPriorityDefault, [&] {
+        std::lock_guard lock(m);
+        execution_order.push_back(kPriorityDefault);
+    });
+
+    pool.Enqueue(kPriorityHigh, [&] {
+        std::lock_guard lock(m);
+        execution_order.push_back(kPriorityHigh);
+    });
+
+    // Unblock the first task.
+    cont.count_down();
+    pool.Wait();
+
+    EXPECT_THAT(execution_order, ElementsAre(kPriorityHigh, kPriorityDefault, kPriorityLow));
 }
 
 }  // namespace init

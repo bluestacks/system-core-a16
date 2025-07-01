@@ -22,6 +22,18 @@
 namespace android {
 namespace init {
 
+enum ThreadPoolPriority {
+    // Kernel module loading should have the highest priority as they form a dependency chain and
+    // sit on the critical path.
+    kPriorityModalias = 0,
+    // SELinux restorecon operations should have the second highest priority as they may be
+    // time-consuming while they do not have dependencies.
+    kPriorityRestorecon = 1,
+    // The rest falls into the same priority.
+    kPriorityDevice = 2,
+    kPriorityFirmware = 2,
+};
+
 class UeventHandler {
   public:
     virtual ~UeventHandler() = default;

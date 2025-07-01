@@ -70,7 +70,7 @@ void ThreadPool::RunWorker() {
                 break;
             }
 
-            task = std::move(tasks_.front());
+            task = std::move(tasks_.top().fn);
             tasks_.pop();
             busy_threads_++;
         }
