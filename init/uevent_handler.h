@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "thread_pool.h"
 #include "uevent.h"
 
 namespace android {
@@ -28,6 +29,9 @@ class UeventHandler {
     virtual void HandleUevent(const Uevent& uevent) = 0;
 
     virtual void ColdbootDone() {}
+
+    // Enqueue a uevent to the thread pool.
+    virtual void EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) = 0;
 };
 
 }  // namespace init

@@ -810,6 +810,10 @@ void DeviceHandler::ColdbootDone() {
     skip_restorecon_ = false;
 }
 
+void DeviceHandler::EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) {
+    thread_pool.Enqueue([this, uevent]() { HandleUevent(uevent); });
+}
+
 DeviceHandler::DeviceHandler(std::vector<Permissions> dev_permissions,
                              std::vector<SysfsPermissions> sysfs_permissions,
                              std::vector<Subsystem> drivers, std::vector<Subsystem> subsystems,

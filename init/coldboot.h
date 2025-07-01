@@ -30,33 +30,25 @@ namespace init {
 class ColdBoot {
   public:
     ColdBoot(UeventListener& uevent_listener,
-             std::vector<std::unique_ptr<UeventHandler>>& uevent_handlers,
+             std::vector<std::shared_ptr<UeventHandler>>& uevent_handlers,
              bool enable_parallel_restorecon, std::vector<std::string> parallel_restorecon_queue)
         : uevent_listener_(uevent_listener),
           uevent_handlers_(uevent_handlers),
-          num_handler_subprocesses_(std::thread::hardware_concurrency() ?: 4),
           enable_parallel_restorecon_(enable_parallel_restorecon),
           parallel_restorecon_queue_(parallel_restorecon_queue) {}
 
     void Run();
 
   private:
-    void UeventHandlerMain(unsigned int process_num, unsigned int total_processes);
     void RegenerateUevents();
-    void ForkSubProcesses();
-    void WaitForSubProcesses();
-    void RestoreConHandler(unsigned int process_num, unsigned int total_processes);
     void GenerateRestoreCon(const std::string& directory);
 
     UeventListener& uevent_listener_;
-    std::vector<std::unique_ptr<UeventHandler>>& uevent_handlers_;
+    std::vector<std::shared_ptr<UeventHandler>>& uevent_handlers_;
 
-    unsigned int num_handler_subprocesses_;
     bool enable_parallel_restorecon_;
 
     std::vector<Uevent> uevent_queue_;
-
-    std::set<pid_t> subprocess_pids_;
 
     std::vector<std::string> restorecon_queue_;
 

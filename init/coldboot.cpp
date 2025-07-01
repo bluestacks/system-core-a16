@@ -15,6 +15,8 @@
  */
 
 #include "coldboot.h"
+#include "coldboot_runner.h"
+#include "com_android_ueventd_flags.h"
 #include "util.h"
 
 #include <android-base/chrono_utils.h>
@@ -24,8 +26,21 @@
 #include <selinux/selinux.h>
 #include <sys/stat.h>
 
+namespace flags = com::android::ueventd::flags;
+
 namespace android {
 namespace init {
+
+void RestoreconRecurse(const std::string& dir) {
+    android::base::Timer t;
+    selinux_android_restorecon(dir.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
+
+    // Mark a dir restorecon operation for 50ms,
+    // Maybe you can add this dir to the ueventd.rc script to parallel processing
+    if (t.duration() > 50ms) {
+        LOG(INFO) << "took " << t.duration().count() << "ms restorecon '" << dir.c_str() << "'";
+    }
+}
 
 void ColdBoot::RegenerateUevents() {
     uevent_listener_.RegenerateUevents([this](const Uevent& uevent) {
@@ -78,13 +93,26 @@ void ColdBoot::Run() {
         }
     }
 
-    ForkSubProcesses();
+    std::unique_ptr<ColdbootRunner> runner;
+
+    unsigned int parallelism = std::thread::hardware_concurrency() ?: 4;
+    if constexpr (flags::enable_coldboot_threadpool()) {
+        runner = std::make_unique<ColdbootRunnerThreadPool>(
+                parallelism, uevent_queue_, uevent_handlers_, enable_parallel_restorecon_,
+                restorecon_queue_);
+    } else {
+        runner = std::make_unique<ColdbootRunnerSubprocess>(
+                parallelism, uevent_queue_, uevent_handlers_, enable_parallel_restorecon_,
+                restorecon_queue_);
+    }
+
+    runner->StartInBackground();
 
     if (!enable_parallel_restorecon_) {
         selinux_android_restorecon("/sys", SELINUX_ANDROID_RESTORECON_RECURSE);
     }
 
-    WaitForSubProcesses();
+    runner->Wait();
 
     android::base::SetProperty(kColdBootDoneProp, "true");
     LOG(INFO) << "Coldboot took " << cold_boot_timer.duration().count() / 1000.0f << " seconds";

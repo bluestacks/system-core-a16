@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "coldboot.h"
+#include "coldboot_runner.h"
 
 #include <android-base/chrono_utils.h>
 #include <android-base/logging.h>
@@ -25,39 +25,38 @@
 namespace android {
 namespace init {
 
-void ColdBoot::UeventHandlerMain(unsigned int process_num, unsigned int total_processes) {
-    for (unsigned int i = process_num; i < uevent_queue_.size(); i += total_processes) {
-        auto& uevent = uevent_queue_[i];
+ColdbootRunnerSubprocess::ColdbootRunnerSubprocess(
+        unsigned int num_handler_subprocesses, const std::vector<Uevent>& uevent_queue,
+        const std::vector<std::shared_ptr<UeventHandler>>& uevent_handlers,
+        bool enable_parallel_restorecon, const std::vector<std::string>& restorecon_queue)
+    : num_handler_subprocesses_(num_handler_subprocesses),
+      uevent_queue_(uevent_queue),
+      uevent_handlers_(uevent_handlers),
+      enable_parallel_restorecon_(enable_parallel_restorecon),
+      restorecon_queue_(restorecon_queue) {}
 
-        for (auto& uevent_handler : uevent_handlers_) {
+void ColdbootRunnerSubprocess::UeventHandlerMain(unsigned int process_num,
+                                                 unsigned int total_processes) {
+    for (unsigned int i = process_num; i < uevent_queue_.size(); i += total_processes) {
+        const auto& uevent = uevent_queue_[i];
+
+        for (const auto& uevent_handler : uevent_handlers_) {
             uevent_handler->HandleUevent(uevent);
         }
     }
 }
 
-void ColdBoot::RestoreConHandler(unsigned int process_num, unsigned int total_processes) {
+void ColdbootRunnerSubprocess::RestoreConHandler(unsigned int process_num,
+                                                 unsigned int total_processes) {
     android::base::Timer t_process;
-
     for (unsigned int i = process_num; i < restorecon_queue_.size(); i += total_processes) {
-        android::base::Timer t;
-        auto& dir = restorecon_queue_[i];
-
-        selinux_android_restorecon(dir.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
-
-        // Mark a dir restorecon operation for 50ms,
-        // Maybe you can add this dir to the ueventd.rc script to parallel processing
-        if (t.duration() > 50ms) {
-            LOG(INFO) << "took " << t.duration().count() << "ms restorecon '" << dir.c_str()
-                      << "' on process '" << process_num << "'";
-        }
+        RestoreconRecurse(restorecon_queue_[i]);
     }
-
-    // Calculate process restorecon time
     LOG(VERBOSE) << "took " << t_process.duration().count() << "ms on process '" << process_num
                  << "'";
 }
 
-void ColdBoot::ForkSubProcesses() {
+void ColdbootRunnerSubprocess::StartInBackground() {
     for (unsigned int i = 0; i < num_handler_subprocesses_; ++i) {
         auto pid = fork();
         if (pid < 0) {
@@ -76,7 +75,7 @@ void ColdBoot::ForkSubProcesses() {
     }
 }
 
-void ColdBoot::WaitForSubProcesses() {
+void ColdbootRunnerSubprocess::Wait() {
     // Treat subprocesses that crash or get stuck the same as if ueventd itself has crashed or gets
     // stuck.
     //
@@ -94,7 +93,7 @@ void ColdBoot::WaitForSubProcesses() {
             continue;
         }
 
-        auto it = std::find(subprocess_pids_.begin(), subprocess_pids_.end(), pid);
+        auto it = subprocess_pids_.find(pid);
         if (it == subprocess_pids_.end()) continue;
 
         if (WIFEXITED(status)) {
