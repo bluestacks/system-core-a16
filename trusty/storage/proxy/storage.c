@@ -463,11 +463,14 @@ static int open_possibly_mapped_file(const char* short_path, const char* full_pa
         return TEMP_FAILURE_RETRY(open(full_path, open_flags, S_IRUSR | S_IWUSR));
     }
 
-    /* Check for existence of root path, we don't allow mappings during early boot */
-    struct stat buf = {0};
-    if (stat(ssdir_name, &buf) != 0) {
-        ALOGW("Root path not accessible yet, refuse to open mappings for now.\n");
-        return -1;
+    if (mapping_entry->uses_symlink) {
+        /* Check for existence of root path, we don't allow mappings that require a symlink during
+         * early boot */
+        struct stat buf = {0};
+        if (stat(ssdir_name, &buf) != 0) {
+            ALOGW("Root path not accessible yet, refuse to open mappings for now.\n");
+            return -1;
+        }
     }
 
     /* We don't support exclusive opening of mapped files */
@@ -484,6 +487,10 @@ static int open_possibly_mapped_file(const char* short_path, const char* full_pa
     if (fd < 0) {
         ALOGE("%s Failed to open mapping file: %s\n", __func__, mapping_entry->backing_storage);
         return -1;
+    }
+
+    if (!mapping_entry->uses_symlink) {
+        return fd;
     }
 
     enum symlink_status symlink_status = check_symlink(full_path, mapping_entry);
