@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,14 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <android-base/file.h>
 
-extern std::vector<std::string> test_modules;
-extern std::vector<std::string> modules_loaded;
+#include <string>
+
+// Used by module_config_ext_test to fake a kernel commandline
+extern std::string kernel_cmdline;
+
+void WriteModuleConfigs(const TemporaryDir& dir, const std::string& module_alias,
+                        const std::string& module_dep, const std::string& module_softdep,
+                        const std::string& module_options, const std::string& module_load,
+                        const std::string& module_blocklist);

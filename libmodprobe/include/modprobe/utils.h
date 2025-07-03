@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,11 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
-extern std::vector<std::string> test_modules;
-extern std::vector<std::string> modules_loaded;
+namespace android {
+namespace modprobe {
+
+std::string MakeCanonical(const std::string& module_path);
+
+}  // namespace modprobe
+}  // namespace android

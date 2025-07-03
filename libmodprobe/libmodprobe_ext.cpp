@@ -22,14 +22,9 @@
 #include <android-base/unique_fd.h>
 
 #include <modprobe/modprobe.h>
+#include <modprobe/utils.h>
 
-std::string Modprobe::GetKernelCmdline(void) {
-    std::string cmdline;
-    if (!android::base::ReadFileToString("/proc/cmdline", &cmdline)) {
-        return "";
-    }
-    return cmdline;
-}
+using android::modprobe::MakeCanonical;
 
 bool Modprobe::Insmod(const std::string& path_name, const std::string& parameters) {
     android::base::unique_fd fd(

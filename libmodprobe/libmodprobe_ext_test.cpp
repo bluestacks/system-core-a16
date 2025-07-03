@@ -26,12 +26,11 @@
 #include <gtest/gtest.h>
 
 #include <modprobe/modprobe.h>
+#include <modprobe/utils.h>
 
 #include "libmodprobe_test.h"
 
-std::string Modprobe::GetKernelCmdline(void) {
-    return kernel_cmdline;
-}
+using android::modprobe::MakeCanonical;
 
 bool Modprobe::Insmod(const std::string& path_name, const std::string& parameters) {
     auto deps = GetDependencies(MakeCanonical(path_name));
