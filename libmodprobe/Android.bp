@@ -19,6 +19,7 @@ cc_library_static {
         "libmodprobe_ext.cpp",
         "module_config.cpp",
         "module_config_ext.cpp",
+        "module_dependency_graph.cpp",
         "utils.cpp",
     ],
     shared_libs: [
@@ -42,6 +43,8 @@ cc_test {
         "module_config_test.cpp",
         "module_config.cpp",
         "module_config_ext_test.cpp",
+        "module_dependency_graph.cpp",
+        "module_dependency_graph_test.cpp",
         "utils.cpp",
     ],
     static_libs: [
