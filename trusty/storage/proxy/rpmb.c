@@ -256,12 +256,14 @@ static enum scsi_result check_scsi_sense(const uint8_t* sense_buf, size_t len) {
     switch (sense_key) {
         case NO_SENSE:
         case 0x0f: /* COMPLETED, not present in kernel headers */
-            ALOGD("SCSI success with sense data: key=%hhu, asc=%hhu, ascq=%hhu\n", sense_key,
-                  additional_sense_code, additional_sense_code_qualifier);
+            ALOGD("SCSI success with sense data: key=%hhu, asc=%hhu, ascq=%hhu, al=%hhu\n",
+                  sense_key, additional_sense_code, additional_sense_code_qualifier,
+                  additional_length);
             return SCSI_RES_OK;
         case UNIT_ATTENTION:
-            ALOGD("UNIT ATTENTION with sense data: key=%hhu, asc=%hhu, ascq=%hhu\n", sense_key,
-                  additional_sense_code, additional_sense_code_qualifier);
+            ALOGD("UNIT ATTENTION with sense data: key=%hhu, asc=%hhu, ascq=%hhu, al=%hhu\n",
+                  sense_key, additional_sense_code, additional_sense_code_qualifier,
+                  additional_length);
             if (additional_sense_code == 0x29) {
                 /* POWER ON or RESET condition */
                 return SCSI_RES_RETRY;
