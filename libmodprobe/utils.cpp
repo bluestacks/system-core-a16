@@ -16,8 +16,11 @@
 
 #include <modprobe/utils.h>
 
+#include <sys/syscall.h>
+
 #include <android-base/logging.h>
 #include <android-base/strings.h>
+#include <android-base/unique_fd.h>
 
 namespace android {
 namespace modprobe {
@@ -41,6 +44,34 @@ std::string CanonicalizeModulePath(const std::string& module_path) {
     // module names can have '-', but their file names will have '_'
     std::replace(module_name.begin(), module_name.end(), '-', '_');
     return module_name;
+}
+
+base::Result<void> InitModule(const std::string& path_name,
+                              const std::unordered_map<std::string, std::string>& module_options,
+                              const std::string& parameters) {
+    std::string options = "";
+    auto options_iter = module_options.find(CanonicalizeModulePath(path_name));
+    if (options_iter != module_options.end()) {
+        options = options_iter->second;
+    }
+    if (!parameters.empty()) {
+        options += " " + parameters;
+    }
+
+    LOG(INFO) << "Loading module " << path_name << " with args '" << options << "'";
+    android::base::unique_fd fd(
+            TEMP_FAILURE_RETRY(open(path_name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC)));
+    if (fd == -1) {
+        PLOG(ERROR) << "Could not open module '" << path_name << "'";
+        return android::base::ErrnoError();
+    }
+    int ret = syscall(__NR_finit_module, fd.get(), options.c_str(), 0);
+    if (ret != 0) {
+        PLOG(ERROR) << "Failed to insmod '" << path_name << "' with args '" << options << "'";
+        return android::base::ErrnoError();
+    }
+    LOG(INFO) << "Loaded kernel module " << path_name;
+    return {};
 }
 
 }  // namespace modprobe

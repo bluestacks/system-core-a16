@@ -17,11 +17,18 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
+
+#include <android-base/result.h>
 
 namespace android {
 namespace modprobe {
 
 std::string CanonicalizeModulePath(const std::string& module_path);
+
+base::Result<void> InitModule(const std::string& path_name,
+                              const std::unordered_map<std::string, std::string>& module_options,
+                              const std::string& parameters = "");
 
 }  // namespace modprobe
 }  // namespace android
