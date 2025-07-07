@@ -27,7 +27,7 @@
 
 #include "exthandler/exthandler.h"
 
-using android::modprobe::MakeCanonical;
+using android::modprobe::CanonicalizeModulePath;
 
 ModuleConfig ModuleConfig::Parse(const std::vector<std::string>& base_paths,
                                  const std::string& load_file) {
@@ -85,7 +85,7 @@ bool ModuleConfig::ParseDepCallback(const std::string& base_path,
         deps.push_back(prefix + *arg);
     }
 
-    std::string canonical_name = MakeCanonical(args[0].substr(0, pos));
+    std::string canonical_name = CanonicalizeModulePath(args[0].substr(0, pos));
     if (canonical_name.empty()) {
         return false;
     }
@@ -155,7 +155,7 @@ bool ModuleConfig::ParseLoadCallback(const std::vector<std::string>& args) {
     auto it = args.begin();
     const std::string& module = *it++;
 
-    const std::string& canonical_name = MakeCanonical(module);
+    const std::string& canonical_name = CanonicalizeModulePath(module);
     if (canonical_name.empty()) {
         return false;
     }
@@ -185,7 +185,7 @@ bool ModuleConfig::ParseOptionsCallback(const std::vector<std::string>& args) {
     const std::string& module = *it++;
     std::string options = "";
 
-    const std::string& canonical_name = MakeCanonical(module);
+    const std::string& canonical_name = CanonicalizeModulePath(module);
     if (canonical_name.empty()) {
         return false;
     }
@@ -217,7 +217,7 @@ bool ModuleConfig::ParseDynOptionsCallback(const std::vector<std::string>& args)
 
     const std::string& module = *it++;
 
-    const std::string& canonical_name = MakeCanonical(module);
+    const std::string& canonical_name = CanonicalizeModulePath(module);
     if (canonical_name.empty()) {
         return false;
     }
@@ -272,7 +272,7 @@ bool ModuleConfig::ParseBlocklistCallback(const std::vector<std::string>& args) 
 
     const std::string& module = *it++;
 
-    const std::string& canonical_name = MakeCanonical(module);
+    const std::string& canonical_name = CanonicalizeModulePath(module);
     if (canonical_name.empty()) {
         return false;
     }
@@ -302,7 +302,7 @@ void ModuleConfig::ParseCfg(const std::string& cfg,
 
 void ModuleConfig::AddOption(const std::string& module_name, const std::string& option_name,
                              const std::string& value) {
-    auto canonical_name = MakeCanonical(module_name);
+    auto canonical_name = CanonicalizeModulePath(module_name);
     auto options_iter = module_options.find(canonical_name);
     auto option_str = option_name + "=" + value;
     if (options_iter != module_options.end()) {

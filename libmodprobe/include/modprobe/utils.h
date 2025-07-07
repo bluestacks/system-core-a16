@@ -21,7 +21,7 @@
 namespace android {
 namespace modprobe {
 
-std::string MakeCanonical(const std::string& module_path);
+std::string CanonicalizeModulePath(const std::string& module_path);
 
 }  // namespace modprobe
 }  // namespace android

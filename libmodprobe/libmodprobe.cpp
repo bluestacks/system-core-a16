@@ -37,7 +37,7 @@
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 
-using android::modprobe::MakeCanonical;
+using android::modprobe::CanonicalizeModulePath;
 
 Modprobe::Modprobe(const std::vector<std::string>& base_paths, const std::string load_file,
                    bool use_blocklist)
@@ -112,7 +112,7 @@ bool Modprobe::LoadWithAliases(const std::string& module_name, bool strict,
     {
         std::lock_guard guard(module_loaded_lock_);
 
-        auto canonical_name = MakeCanonical(module_name);
+        auto canonical_name = CanonicalizeModulePath(module_name);
         if (module_loaded_.count(canonical_name)) {
             return true;
         }
@@ -122,7 +122,7 @@ bool Modprobe::LoadWithAliases(const std::string& module_name, bool strict,
         for (const auto& [alias, aliased_module] : module_aliases_) {
             if (fnmatch(alias.c_str(), module_name.c_str(), 0) != 0) continue;
             LOG(VERBOSE) << "Found alias for '" << module_name << "': '" << aliased_module;
-            if (module_loaded_.count(MakeCanonical(aliased_module))) continue;
+            if (module_loaded_.count(CanonicalizeModulePath(aliased_module))) continue;
             modules_to_load.emplace(aliased_module);
         }
     }
@@ -144,10 +144,10 @@ bool Modprobe::LoadWithAliases(const std::string& module_name, bool strict,
 bool Modprobe::IsBlocklisted(const std::string& module_name) {
     if (!blocklist_enabled) return false;
 
-    auto canonical_name = MakeCanonical(module_name);
+    auto canonical_name = CanonicalizeModulePath(module_name);
     auto dependencies = GetDependencies(canonical_name);
     for (auto dep = dependencies.begin(); dep != dependencies.end(); ++dep) {
-        if (module_blocklist_.count(MakeCanonical(*dep))) return true;
+        if (module_blocklist_.count(CanonicalizeModulePath(*dep))) return true;
     }
 
     return module_blocklist_.count(canonical_name) > 0;
@@ -169,13 +169,13 @@ bool Modprobe::LoadModulesParallel(int num_threads) {
             LOG(VERBOSE) << "LMP: Blocklist: Module " << module << " skipping...";
             continue;
         }
-        auto dependencies = GetDependencies(MakeCanonical(module));
+        auto dependencies = GetDependencies(CanonicalizeModulePath(module));
         if (dependencies.empty()) {
             LOG(ERROR) << "LMP: Hard-dep: Module " << module
                        << " not in .dep file";
             return false;
         }
-        mod_with_deps[MakeCanonical(module)] = dependencies;
+        mod_with_deps[CanonicalizeModulePath(module)] = dependencies;
     }
 
     while (!mod_with_deps.empty()) {
@@ -189,7 +189,7 @@ bool Modprobe::LoadModulesParallel(int num_threads) {
             if (itd_last == it_dep.rend())
                 continue;
 
-            auto cnd_last = MakeCanonical(*itd_last);
+            auto cnd_last = CanonicalizeModulePath(*itd_last);
             // Hard-dependencies cannot be blocklisted
             if (IsBlocklisted(cnd_last)) {
                 LOG(ERROR) << "LMP: Blocklist: Module-dep " << cnd_last
@@ -272,7 +272,7 @@ bool Modprobe::LoadListedModules(bool strict) {
 }
 
 bool Modprobe::Remove(const std::string& module_name) {
-    auto dependencies = GetDependencies(MakeCanonical(module_name));
+    auto dependencies = GetDependencies(CanonicalizeModulePath(module_name));
     for (auto dep = dependencies.begin(); dep != dependencies.end(); ++dep) {
         Rmmod(*dep);
     }
@@ -297,7 +297,7 @@ bool Modprobe::GetAllDependencies(const std::string& module,
                                   std::vector<std::string>* pre_dependencies,
                                   std::vector<std::string>* dependencies,
                                   std::vector<std::string>* post_dependencies) {
-    std::string canonical_name = MakeCanonical(module);
+    std::string canonical_name = CanonicalizeModulePath(module);
     if (pre_dependencies) {
         pre_dependencies->clear();
         for (const auto& [it_module, it_softdep] : module_pre_softdep_) {

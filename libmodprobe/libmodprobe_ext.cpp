@@ -24,7 +24,7 @@
 #include <modprobe/modprobe.h>
 #include <modprobe/utils.h>
 
-using android::modprobe::MakeCanonical;
+using android::modprobe::CanonicalizeModulePath;
 
 bool Modprobe::Insmod(const std::string& path_name, const std::string& parameters) {
     android::base::unique_fd fd(
@@ -34,7 +34,7 @@ bool Modprobe::Insmod(const std::string& path_name, const std::string& parameter
         return false;
     }
 
-    auto canonical_name = MakeCanonical(path_name);
+    auto canonical_name = CanonicalizeModulePath(path_name);
     std::string options = "";
     auto options_iter = module_options_.find(canonical_name);
     if (options_iter != module_options_.end()) {
@@ -67,7 +67,7 @@ bool Modprobe::Insmod(const std::string& path_name, const std::string& parameter
 }
 
 bool Modprobe::Rmmod(const std::string& module_name) {
-    auto canonical_name = MakeCanonical(module_name);
+    auto canonical_name = CanonicalizeModulePath(module_name);
     int ret = syscall(__NR_delete_module, canonical_name.c_str(), O_NONBLOCK);
     if (ret != 0) {
         PLOG(ERROR) << "Failed to remove module '" << module_name << "'";

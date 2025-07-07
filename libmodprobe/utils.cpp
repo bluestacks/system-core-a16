@@ -22,7 +22,7 @@
 namespace android {
 namespace modprobe {
 
-std::string MakeCanonical(const std::string& module_path) {
+std::string CanonicalizeModulePath(const std::string& module_path) {
     auto start = module_path.find_last_of('/');
     if (start == std::string::npos) {
         start = 0;
