@@ -113,9 +113,7 @@ impl Drop for TraceEventFile {
         if let Err(ret) = self.restore() {
             error!(
                 "Failed to restore state of file {:?} with value: {:?}. Error: {}",
-                self.path,
-                self.restore_value,
-                ret.to_string()
+                self.path, self.restore_value, ret
             );
         }
     }

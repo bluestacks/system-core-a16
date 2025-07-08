@@ -150,7 +150,7 @@ fn worker_internal(
                                 _ => error!(
                                     "Failed to open file id: {} with {}",
                                     record.file_id.clone(),
-                                    e.to_string()
+                                    e
                                 ),
                             }
                             continue;
@@ -170,7 +170,7 @@ fn worker_internal(
                         warn!(
                             "Failed to turn off filesystem read ahead for file id: {} with {}",
                             record.file_id.clone(),
-                            e.to_string()
+                            e
                         );
                     }
                     file
@@ -184,11 +184,7 @@ fn worker_internal(
             if exit_on_error {
                 return Err(e);
             } else {
-                error!(
-                    "readahead failed on file id: {} with: {}",
-                    record.file_id.clone(),
-                    e.to_string()
-                );
+                error!("readahead failed on file id: {} with: {}", record.file_id.clone(), e);
                 continue;
             }
         }
