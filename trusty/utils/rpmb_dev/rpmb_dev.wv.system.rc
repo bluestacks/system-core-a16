@@ -47,7 +47,7 @@ on early-boot
     exec_start rpmb_mock_init_wv_system
     start rpmb_mock_wv_system
 
-on post-fs-data && \
+on property:sys.boot_completed=1  && \
     property:trusty.widevine_vm.nonsecure_vm_ready=1 && \
     property:trusty.widevine_vm.vm_cid=*
     start storageproxyd_wv_system
