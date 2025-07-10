@@ -434,6 +434,7 @@ class SnapshotManager final : public ISnapshotManager {
 
     enum class SnapshotDriver { DM_SNAPSHOT, DM_USER, UBLK };
 
+    bool UpdateUsesUblk();
     // Add new public entries above this line.
 
   private:
@@ -884,9 +885,6 @@ class SnapshotManager final : public ISnapshotManager {
 
     // Check if we need to use Ublk
     bool UpdateUsesUblk(LockedFile* lock);
-
-    // Check if we need to use Ublk without lock
-    bool UpdateUsesUblk();
 
     // Check if direct reads are enabled for the source image
     bool UpdateUsesODirect(LockedFile* lock);

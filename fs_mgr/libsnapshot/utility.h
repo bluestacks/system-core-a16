@@ -142,8 +142,6 @@ bool CanUseUserspaceSnapshots();
 bool IsDmSnapshotTestingEnabled();
 bool IsVendorFromAndroid12();
 bool GetDebugFlag(const std::string& flag);
-bool IsVabcWithUblkSupportEnabledByFlag();
-
 // Swap the suffix of a partition name.
 std::string GetOtherPartitionName(const std::string& name);
 

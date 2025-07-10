@@ -64,7 +64,7 @@ static constexpr char kSnapuserdFirstStageInfoVar[] = "FIRST_STAGE_SNAPUSERD_INF
 static constexpr char kSnapuserdLabel[] = "u:object_r:snapuserd_exec:s0";
 static constexpr char kSnapuserdSocketLabel[] = "u:object_r:snapuserd_socket:s0";
 
-void LaunchFirstStageSnapuserd() {
+void LaunchFirstStageSnapuserd(bool use_ublk) {
     SocketDescriptor socket_desc;
     socket_desc.name = android::snapshot::kSnapuserdSocket;
     socket_desc.type = SOCK_STREAM;
@@ -87,10 +87,15 @@ void LaunchFirstStageSnapuserd() {
     if (pid == 0) {
         socket->Publish();
 
-        char* arg0 = const_cast<char*>(kSnapuserdPath);
-        char arg1[] = "-user_snapshot";
-        char* const argv[] = {arg0, arg1, nullptr};
-        if (execv(arg0, argv) < 0) {
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(kSnapuserdPath));
+        argv.push_back(const_cast<char*>("-user_snapshot"));
+        if (use_ublk) {
+            argv.push_back(const_cast<char*>("-ublk"));
+        }
+        argv.push_back(nullptr);
+
+        if (execv(argv[0], argv.data()) < 0) {
             PLOG(FATAL) << "Cannot launch snapuserd; execv failed";
         }
         _exit(127);
@@ -150,6 +155,32 @@ static void RelabelDeviceMapper() {
             selinux_android_restorecon(path.string().c_str(), 0);
         }
     }
+}
+
+static void RelabelUblkDevices() {
+    // Relabel ublk block devices: ublkb*
+    std::error_code ec;
+    for (auto& iter : std::filesystem::directory_iterator("/dev/block", ec)) {
+        const auto& path_str = iter.path().string();
+        if (android::base::StartsWith(path_str, "/dev/block/ublkb")) {
+            selinux_android_restorecon(path_str.c_str(), 0);
+        }
+    }
+    if (ec) {
+        LOG(WARNING) << "Error iterating /dev/block/ for ublkb* relabeling: " << ec.message();
+    }
+    // Relabel /dev/ublkc* control nodes
+    for (auto& iter : std::filesystem::directory_iterator("/dev", ec)) {
+        const auto& path_str = iter.path().string();
+        if (android::base::StartsWith(path_str, "/dev/ublkc")) {
+            selinux_android_restorecon(path_str.c_str(), 0);
+        }
+    }
+    if (ec) {
+        LOG(WARNING) << "Error iterating /dev for ublkc* relabeling: " << ec.message();
+    }
+    // Relabel the global ublk-control node
+    selinux_android_restorecon("/dev/ublk-control", 0);
 }
 
 static std::optional<int> GetRamdiskSnapuserdFd() {
@@ -238,6 +269,10 @@ void SnapuserdSelinuxHelper::StartTransition() {
     if (!sm_->PrepareSnapuserdArgsForSelinux(&argv_)) {
         LOG(FATAL) << "Could not perform selinux transition";
     }
+    // Check if we are going to use ublk path and save it so
+    // we can re-use decision than checking again.
+    using_ublk_ = std::any_of(argv_.begin(), argv_.end(),
+                              [](const std::string& arg) { return arg == "-ublk"; });
 }
 
 void SnapuserdSelinuxHelper::FinishTransition() {
@@ -248,7 +283,9 @@ void SnapuserdSelinuxHelper::FinishTransition() {
     selinux_android_restorecon("/dev/urandom", 0);
     selinux_android_restorecon("/dev/kmsg", 0);
     selinux_android_restorecon("/dev/dm-user", SELINUX_ANDROID_RESTORECON_RECURSE);
-
+    if (using_ublk_) {
+        RelabelUblkDevices();
+    }
     RelaunchFirstStageSnapuserd();
 
     if (munlockall() < 0) {
@@ -393,14 +430,8 @@ void SnapuserdSelinuxHelper::RelaunchFirstStageSnapuserd() {
     unsetenv(kSnapuserdFirstStageFdVar);
 
     RestoreconRamdiskSnapuserd(fd.value());
-    bool using_ublk_ = false;
-    for (const auto& arg : argv_) {
-        if (arg == "-ublk") {
-            using_ublk_ = true;
-            break;
-        }
-    }
     int sockets[2] = {-1, -1};
+
     if (using_ublk_) {
         // Create a socket pair for snapuserd to request udev event assistance from init.
         // In early boot stages, ueventd might not be ready, so init helps create devices.
@@ -454,6 +485,8 @@ void SnapuserdSelinuxHelper::RelaunchFirstStageSnapuserd() {
             ProcessSnapuserdUeventRequests(sockets[0]);
             close(sockets[0]);  // Served its purpose
             LOG(INFO) << "Finished processing uevent requests, socket closed.";
+            // relabel newly created devices
+            RelabelUblkDevices();
         }
 
         if (!TestSnapuserdIsReady()) {

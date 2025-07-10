@@ -332,9 +332,5 @@ bool GetDebugFlag(const std::string& flag) {
     return IsDebuggable() && fetcher->GetBoolProperty(prop_name, false);
 }
 
-bool IsVabcWithUblkSupportEnabledByFlag() {
-    return com::android::libsnapshot::vabc_with_ublk_support();
-}
-
 }  // namespace snapshot
 }  // namespace android

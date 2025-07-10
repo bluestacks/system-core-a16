@@ -89,7 +89,8 @@ class IBlockServerFactory {
   public:
     virtual ~IBlockServerFactory() {}
     // Let some implementations provide their own CreateDevice()
-    virtual bool CreateDevice(const std::string& deviceName, uint64_t num_sectors) = 0;
+    virtual bool CreateDevice(const std::string& deviceName, uint64_t num_sectors,
+                              int num_queues) = 0;
     // Return a new IBlockServerOpener given a unique device name.
     virtual std::shared_ptr<IBlockServerOpener> CreateOpener(const std::string& misc_name) = 0;
     // Let the implementations provide the start call so they can manage device state
