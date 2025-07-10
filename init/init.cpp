@@ -958,6 +958,78 @@ static Result<void> CheckTradeInModeStatus([[maybe_unused]] const BuiltinArgumen
     return {};
 }
 
+static std::string CheckForRollbackLogs() {
+    // current_slot == Source. Attempt to detect rollbacks.
+    if (access(android::snapshot::SnapshotManager::GetGlobalRollbackIndicatorPath().c_str(),
+               F_OK) != 0) {
+        return "";
+    }
+    LOG(INFO) << "Rollback indicator detected, checking pstore for rollback logs";
+    // These logs help diagnose the reason for the rollback,
+    // especially when /data might be wiped.
+    const std::vector<std::string> pstore_paths = {
+            "/sys/fs/pstore/console-ramoops",
+            "/sys/fs/pstore/console-ramoops-0",
+            "/sys/fs/pstore/pmsg-ramoops-0",
+    };
+
+    std::string pstore_content;
+    for (const auto& pstore_path : pstore_paths) {
+        if (access(pstore_path.c_str(), R_OK) == 0) {
+            std::string file_content;
+            if (android::base::ReadFileToString(pstore_path, &file_content)) {
+                pstore_content += "\n\n--- " + pstore_path + " ---\n" + file_content;
+            } else {
+                PLOG(WARNING) << "Failed to read pstore log: " << pstore_path;
+            }
+        }
+    }
+    if (pstore_content.empty()) {
+        LOG(ERROR) << "rollback detected but pstore is empty";
+    }
+    return pstore_content;
+}
+
+static Result<void> CopyRollbackLogs(std::string& content) {
+#ifdef __ANDROID__
+    if (!WaitForProperty("sys.boot_completed", "1")) {
+        LOG(ERROR) << "WaitForProperty failed";
+        return {};
+    }
+    const std::string rollback_log_path = "/data/misc/update_engine_log/rollback_logs.txt";
+    // these logs should be retained from as early as possible in the boot process. Unfortunately it
+    // doesn't look like pstore can be read at the beginning of secondstage, so we'll either have to
+    // shift the mounting of sys/fs to earlier, or find the earliest point we can read pstore
+    if (!content.empty()) {
+        // Append to the log file. Permissions 0644, owner root,
+        // group root.
+        if (!android::base::WriteStringToFile(content, rollback_log_path, 0644, 0, 0, true)) {
+            PLOG(ERROR) << "Failed to write rollback logs to " << rollback_log_path;
+        } else {
+            LOG(INFO) << "Copied rollback logs to " << rollback_log_path;
+        }
+    }
+    return {};
+#endif
+}
+
+// this function needs to fork here because CheckForRollbackLogs calls WaitForProperty() which tries
+// to acquire the property service lock which is also needed in init. If we start a thread instead
+// of forking, we'll run into a deadlock
+static Result<void> SetCopyRollbackLogsAction(std::string content, const BuiltinArguments& args) {
+    pid_t c_pid = fork();
+
+    if (c_pid == 0) {
+        // See if there's anything in pstore in case of a rollback, and hold it in memory until
+        // /data is mounted, then flush to /data
+        std::string ota_rollback_content = CheckForRollbackLogs();
+
+        CopyRollbackLogs(ota_rollback_content);
+        _exit(EXIT_SUCCESS);
+    }
+    return {};
+}
+
 static void SecondStageBootMonitor(int timeout_sec) {
     auto cur_time = boot_clock::now().time_since_epoch();
     int cur_sec = std::chrono::duration_cast<std::chrono::seconds>(cur_time).count();
@@ -1166,6 +1238,9 @@ int SecondStageMain(int argc, char** argv) {
     // Trigger all the boot actions to get us started.
     am.QueueEventTrigger("init");
 
+    // Copy logs captures from pstore. Flush the logs when boot completes
+    am.QueueBuiltinAction(std::bind(SetCopyRollbackLogsAction, "", std::placeholders::_1),
+                          "CopyRollbackLogs");
     // Don't mount filesystems or start core system services in charger mode.
     std::string bootmode = GetProperty("ro.bootmode", "");
     if (bootmode == "charger") {
