@@ -958,12 +958,7 @@ static Result<void> CheckTradeInModeStatus([[maybe_unused]] const BuiltinArgumen
     return {};
 }
 
-static std::string CheckForRollbackLogs() {
-    // current_slot == Source. Attempt to detect rollbacks.
-    if (access(android::snapshot::SnapshotManager::GetGlobalRollbackIndicatorPath().c_str(),
-               F_OK) != 0) {
-        return "";
-    }
+static std::string GetRollbackLogs() {
     LOG(INFO) << "Rollback indicator detected, checking pstore for rollback logs";
     // These logs help diagnose the reason for the rollback,
     // especially when /data might be wiped.
@@ -1013,16 +1008,20 @@ static Result<void> CopyRollbackLogs(std::string& content) {
 #endif
 }
 
-// this function needs to fork here because CheckForRollbackLogs calls WaitForProperty() which tries
+// this function needs to fork here because GetRollbackLogs calls WaitForProperty() which tries
 // to acquire the property service lock which is also needed in init. If we start a thread instead
 // of forking, we'll run into a deadlock
-static Result<void> SetCopyRollbackLogsAction(std::string content, const BuiltinArguments& args) {
+static Result<void> SetCopyRollbackLogsAction(const BuiltinArguments& args) {
+    if (access(android::snapshot::SnapshotManager::GetGlobalRollbackIndicatorPath().c_str(),
+               F_OK) != 0) {
+        return {};
+    }
     pid_t c_pid = fork();
 
     if (c_pid == 0) {
         // See if there's anything in pstore in case of a rollback, and hold it in memory until
         // /data is mounted, then flush to /data
-        std::string ota_rollback_content = CheckForRollbackLogs();
+        std::string ota_rollback_content = GetRollbackLogs();
 
         CopyRollbackLogs(ota_rollback_content);
         _exit(EXIT_SUCCESS);
@@ -1239,8 +1238,7 @@ int SecondStageMain(int argc, char** argv) {
     am.QueueEventTrigger("init");
 
     // Copy logs captures from pstore. Flush the logs when boot completes
-    am.QueueBuiltinAction(std::bind(SetCopyRollbackLogsAction, "", std::placeholders::_1),
-                          "CopyRollbackLogs");
+    am.QueueBuiltinAction(SetCopyRollbackLogsAction, "CopyRollbackLogs");
     // Don't mount filesystems or start core system services in charger mode.
     std::string bootmode = GetProperty("ro.bootmode", "");
     if (bootmode == "charger") {
