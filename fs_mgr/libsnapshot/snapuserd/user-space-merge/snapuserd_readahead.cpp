@@ -328,7 +328,6 @@ bool ReadAhead::ReadAheadAsyncIO() {
 
             pending_sqe -= 1;
             pending_ios_to_submit += 1;
-            sqe->flags |= IOSQE_ASYNC;
         }
 
         // pending_sqe == 0 : Ring is full

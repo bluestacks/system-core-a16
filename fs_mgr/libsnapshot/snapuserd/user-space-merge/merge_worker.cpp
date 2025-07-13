@@ -282,11 +282,13 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                 // These flags are important - We need to make sure that the
                 // blocks are linked and are written in the same order as
                 // populated. This is because of overlapping block writes.
+                // Furthermore, avoid setting IOSQE_ASYNC flag as it spins
+                // up worker threads.
                 //
                 // If there are no dependency, we can optimize this further by
                 // allowing parallel writes; but for now, just link all the SQ
                 // entries.
-                sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
+                sqe->flags |= IOSQE_IO_LINK;
             }
 
             // Ring is full or no more COW ops to be merged in this batch
@@ -314,7 +316,7 @@ bool MergeWorker::MergeOrderedOpsAsync() {
                             pending_sqe -= 1;
                             flush_required = false;
                             pending_ios_to_submit += 1;
-                            sqe->flags |= (IOSQE_IO_LINK | IOSQE_ASYNC);
+                            sqe->flags |= IOSQE_IO_LINK;
                         }
                     } else {
                         flush_required = true;
