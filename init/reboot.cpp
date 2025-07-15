@@ -148,8 +148,7 @@ class MountEntry {
         if (IsF2Fs()) {
             const char* f2fs_argv[] = {
                     "/system/bin/fsck.f2fs",
-                    "-p",
-                    "2",
+                    "-a",
                     mnt_fsname_.c_str(),
             };
             // FIXME: enable more logs for debugging b/425186640
