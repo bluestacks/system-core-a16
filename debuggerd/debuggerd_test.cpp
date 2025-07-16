@@ -1398,7 +1398,7 @@ TEST_F(CrasherTest, capabilities) {
 }
 
 TEST_F(CrasherTest, fake_pid) {
-  // Prime the getpid/gettid caches.
+  // Prime any getpid/gettid caches.
   UNUSED(getpid());
   UNUSED(gettid());
 
@@ -1407,7 +1407,7 @@ TEST_F(CrasherTest, fake_pid) {
   };
   StartProcess(
       []() {
-        ASSERT_NE(getpid(), syscall(__NR_getpid));
+        ASSERT_EQ(getpid(), syscall(__NR_getpid));
         ASSERT_NE(gettid(), syscall(__NR_gettid));
         raise(SIGSEGV);
       },
