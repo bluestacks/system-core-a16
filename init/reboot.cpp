@@ -145,17 +145,7 @@ class MountEntry {
 
     void DoFsck() {
         int st;
-        if (IsF2Fs()) {
-            const char* f2fs_argv[] = {
-                    "/system/bin/fsck.f2fs",
-                    "-p",
-                    "2",
-                    mnt_fsname_.c_str(),
-            };
-            // FIXME: enable more logs for debugging b/425186640
-            logwrap_fork_execvp(arraysize(f2fs_argv), f2fs_argv, &st, false, LOG_KLOG, false,
-                                nullptr);
-        } else if (IsExt4()) {
+        if (IsExt4()) {
             const char* ext4_argv[] = {
                     "/system/bin/e2fsck",
                     "-y",
