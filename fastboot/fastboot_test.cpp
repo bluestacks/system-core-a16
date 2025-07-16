@@ -294,6 +294,29 @@ TEST_F(FlashingTest, FlashUnsupportedUnalignedChunk) {
     ASSERT_FALSE(split_file(tmp.fd, 4096, &out));
 }
 
+TEST_F(FlashingTest, Bug432012986) {
+    constexpr size_t kBlockSize = 4096;
+    SparsePtr s(sparse_file_new(kBlockSize, kBlockSize * 4), sparse_file_destroy);
+
+    // Create a sparse file that when encoded is not 512-byte aligned.
+    unique_fd urandom(open("/dev/urandom", O_RDONLY));
+    std::string data(kBlockSize, '\0');
+    ASSERT_TRUE(android::base::ReadFully(urandom, data.data(), data.size()));
+    ASSERT_EQ(sparse_file_add_data(s.get(), data.data(), data.size(), 0), 0);
+    ASSERT_EQ(sparse_file_add_data(s.get(), data.data(), data.size(), 1), 0);
+    ASSERT_EQ(sparse_file_add_data(s.get(), data.data(), data.size(), 2), 0);
+    ASSERT_EQ(sparse_file_add_fill(s.get(), 0, kBlockSize, 3), 0);
+
+    TemporaryFile tmp;
+    ASSERT_GE(tmp.fd, 0);
+    ASSERT_EQ(sparse_file_write(s.get(), tmp.fd, false, true, false), 0);
+
+    // Set limit to 2 sparse blocks, since resparse will infinite loop if asked
+    // to split 1 block.
+    fp_.sparse_limit = kBlockSize * 2;
+    do_flash("test", tmp.path, false, &fp_);
+}
+
 int main(int argc, char* argv[]) {
     ::testing::InitGoogleTest(&argc, argv);
     android::base::InitLogging(argv);
