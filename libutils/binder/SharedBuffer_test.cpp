@@ -14,16 +14,35 @@
  * limitations under the License.
  */
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <memory>
 #include <stdint.h>
+
+#include <utils/AllocatorTracker.h>
 
 #include "SharedBuffer.h"
 
 extern "C" void __hwasan_init() __attribute__((weak));
 #define SKIP_WITH_HWASAN \
     if (&__hwasan_init != 0) GTEST_SKIP()
+
+#ifdef ANDROID_UTILS_CUSTOM_ALLOCATOR
+
+using ::testing::_;
+
+// A simple allocator that can be used to check that the allocator is being
+// called when expected.
+// A simple allocator that always returns nullptr.
+class MockAllocator : public android::Allocator {
+  public:
+    MOCK_METHOD(void*, allocate, (size_t size, size_t alignment), (override));
+    MOCK_METHOD(void, deallocate, (void* ptr), (override));
+    MOCK_METHOD(void, abort, (), (override));
+};
+
+#endif  // ANDROID_UTILS_CUSTOM_ALLOCATOR
 
 TEST(SharedBufferTest, alloc_death) {
     EXPECT_DEATH(android::SharedBuffer::alloc(SIZE_MAX), "");
@@ -84,3 +103,26 @@ TEST(SharedBufferTest, editResize_zero_size) {
     ASSERT_EQ(0U, buf->size());
     buf->release();
 }
+
+#ifdef ANDROID_UTILS_CUSTOM_ALLOCATOR
+TEST(SharedBufferTest, custom_allocator) {
+    MockAllocator allocator;
+    android::AllocatorTracker::getInstance().setAllocator(&allocator);
+
+    // Expect allocate to be called and return memory allocated by malloc.
+    EXPECT_CALL(allocator, allocate(_, _)).WillOnce([](size_t size, size_t) {
+        return malloc(size);
+    });
+
+    android::SharedBuffer* buf = android::SharedBuffer::alloc(10);
+    ASSERT_NE(buf, nullptr);
+
+    // Expect deallocate to be called and free the memory.
+    EXPECT_CALL(allocator, deallocate(_)).WillOnce([](void* ptr) { free(ptr); });
+
+    // This should trigger the deallocate call.
+    buf->release();
+
+    android::AllocatorTracker::getInstance().setAllocator(nullptr);
+}
+#endif  // ANDROID_UTILS_CUSTOM_ALLOCATOR
