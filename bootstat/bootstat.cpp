@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <ctime>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -56,6 +57,11 @@ struct AtomInfo {
   int32_t atom;
   int32_t event;
 };
+
+// Identifier for the firmware boot 'splash' screen stage on desktop. This stage
+// timing is already included in the 'firmware' part of the boot sequence, so it
+// must not calculated twice when summing together all boot stages.
+const std::string_view FIRMWARE_SPLASH = "splash";
 
 // Maps BootEvent used inside bootstat into statsd atom defined in
 // frameworks/proto_logging/stats/atoms.proto.
@@ -1222,9 +1228,12 @@ const BootloaderTimingMap GetBootLoaderTimings() {
 }
 
 // Returns the total bootloader boot time from the ro.boot.boottime system property.
-int32_t GetBootloaderTime(const BootloaderTimingMap& bootloader_timings) {
+int32_t GetBootloaderTime(const BootloaderTimingMap& bootloader_timings,
+                          const std::initializer_list<std::string_view>& skipped) {
   int32_t total_time = 0;
   for (const auto& timing : bootloader_timings) {
+    // Skip any metric that should not be used in the total time calculation.
+    if (std::find(skipped.begin(), skipped.end(), timing.first) != skipped.end()) continue;
     total_time += timing.second;
   }
 
@@ -1234,28 +1243,19 @@ int32_t GetBootloaderTime(const BootloaderTimingMap& bootloader_timings) {
 // Parses and records the set of bootloader stages and associated boot times
 // from the ro.boot.boottime system property.
 void RecordBootloaderTimings(BootEventRecordStore* boot_event_store,
-                             const BootloaderTimingMap& bootloader_timings) {
-  int32_t total_time = 0;
+                             const BootloaderTimingMap& bootloader_timings,
+                             const int32_t bootloader_boot_duration) {
   for (const auto& timing : bootloader_timings) {
-    total_time += timing.second;
     boot_event_store->AddBootEventWithValue("boottime.bootloader." + timing.first, timing.second);
   }
-
-  boot_event_store->AddBootEventWithValue("boottime.bootloader.total", total_time);
+  boot_event_store->AddBootEventWithValue("boottime.bootloader.total", bootloader_boot_duration);
 }
 
 // Returns the closest estimation to the absolute device boot time, i.e.,
 // from power on to boot_complete, including bootloader times.
 std::chrono::milliseconds GetAbsoluteBootTime(const BootloaderTimingMap& bootloader_timings,
                                               std::chrono::milliseconds uptime) {
-  int32_t bootloader_time_ms = 0;
-
-  for (const auto& timing : bootloader_timings) {
-    if (timing.first.compare("SW") != 0) {
-      bootloader_time_ms += timing.second;
-    }
-  }
-
+  int32_t bootloader_time_ms = GetBootloaderTime(bootloader_timings, {FIRMWARE_SPLASH, "SW"});
   auto bootloader_duration = std::chrono::milliseconds(bootloader_time_ms);
   return bootloader_duration + uptime;
 }
@@ -1376,8 +1376,8 @@ void RecordBootComplete() {
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init.cold_boot_wait");
 
   const BootloaderTimingMap bootloader_timings = GetBootLoaderTimings();
-  int32_t bootloader_boot_duration = GetBootloaderTime(bootloader_timings);
-  RecordBootloaderTimings(&boot_event_store, bootloader_timings);
+  const int32_t bootloader_boot_duration = GetBootloaderTime(bootloader_timings, {FIRMWARE_SPLASH});
+  RecordBootloaderTimings(&boot_event_store, bootloader_timings, bootloader_boot_duration);
 
   auto uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(uptime_ns);
   auto absolute_boot_time = GetAbsoluteBootTime(bootloader_timings, uptime_ms);
