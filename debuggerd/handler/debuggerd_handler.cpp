@@ -80,8 +80,12 @@ using unique_fd = android::base::unique_fd_impl<FdsanBypassCloser>;
 
 #define CRASH_DUMP_PATH "/apex/com.android.runtime/bin/" CRASH_DUMP_NAME
 
-// A wrapper that directly invokes the syscall, in case the cached value is invalid.
-#pragma GCC poison gettid
+// Wrappers that directly invoke the respective syscalls, in case the cached values are invalid.
+#pragma GCC poison getpid gettid
+static pid_t __getpid() {
+  return syscall(__NR_getpid);
+}
+
 static pid_t __gettid() {
   return syscall(__NR_gettid);
 }
@@ -288,13 +292,13 @@ static void log_signal_summary(const siginfo_t* si) {
   }
 
   if (si->si_signo == BIONIC_SIGNAL_DEBUGGER) {
-    async_safe_format_log(ANDROID_LOG_INFO, "libc", "Requested dump for pid %d (%s)", getpid(),
+    async_safe_format_log(ANDROID_LOG_INFO, "libc", "Requested dump for pid %d (%s)", __getpid(),
                           main_thread_name);
     return;
   }
 
   // Many signals don't have a sender or extra detail, but some do...
-  pid_t self_pid = getpid();
+  pid_t self_pid = __getpid();
   char sender_desc[32] = {};  // " from pid 1234, uid 666"
   if (signal_has_sender(si, self_pid)) {
     get_signal_sender(sender_desc, sizeof(sender_desc), si);
@@ -636,7 +640,7 @@ static void resend_signal(siginfo_t* info) {
   // to deregister our signal handler for that signal before continuing.
   if (info->si_signo != BIONIC_SIGNAL_DEBUGGER) {
     signal(info->si_signo, SIG_DFL);
-    int rc = syscall(SYS_rt_tgsigqueueinfo, getpid(), __gettid(), info->si_signo, info);
+    int rc = syscall(SYS_rt_tgsigqueueinfo, __getpid(), __gettid(), info->si_signo, info);
     if (rc != 0) {
       fatal_errno("failed to resend signal during crash");
     }
@@ -663,7 +667,7 @@ static void debuggerd_signal_handler(int signal_number, siginfo_t* info, void* c
     memset(&dummy_info, 0, sizeof(dummy_info));
     dummy_info.si_signo = signal_number;
     dummy_info.si_code = SI_USER;
-    dummy_info.si_pid = getpid();
+    dummy_info.si_pid = __getpid();
     dummy_info.si_uid = getuid();
     info = &dummy_info;
   } else if (info->si_code >= 0 || info->si_code == SI_TKILL) {
@@ -682,7 +686,7 @@ static void debuggerd_signal_handler(int signal_number, siginfo_t* info, void* c
     // Applications can set abort messages via android_set_abort_message without
     // actually aborting; ignore those messages in non-fatal dumps.
     process_info.abort_msg = nullptr;
-    if (info->si_code == SI_QUEUE && info->si_pid == getpid()) {
+    if (info->si_code == SI_QUEUE && info->si_pid == __getpid()) {
       // Allow for the abort message to be explicitly specified via the sigqueue value.
       // Keep the bottom bit intact for representing whether we want a backtrace or a tombstone.
       if (si_val != kDebuggerdFallbackSivalUintptrRequestDump) {
@@ -794,7 +798,7 @@ static void debuggerd_signal_handler(int signal_number, siginfo_t* info, void* c
   // setting crashing_tid to pid instead of the current thread's tid avoids
   // the problem.
   debugger_thread_info thread_info = {
-      .crashing_tid = (signal_number == BIONIC_SIGNAL_DEBUGGER) ? getpid() : __gettid(),
+      .crashing_tid = (signal_number == BIONIC_SIGNAL_DEBUGGER) ? __getpid() : __gettid(),
       .pseudothread_tid = -1,
       .siginfo = info,
       .ucontext = context,
