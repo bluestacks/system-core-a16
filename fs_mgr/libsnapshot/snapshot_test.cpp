@@ -26,6 +26,7 @@
 #include <deque>
 #include <future>
 #include <iostream>
+#include <thread>
 
 #include <aidl/android/hardware/boot/MergeStatus.h>
 #include <android-base/file.h>
