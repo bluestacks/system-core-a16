@@ -2126,6 +2126,9 @@ bool SnapshotManager::PerformInitTransition(InitTransition transition,
             snapuserd_argv->emplace_back("-num_verify_threads=" +
                                          std::to_string(num_verify_threads));
         }
+        if (UpdateUsesSkipVerification(lock.get())) {
+            snapuserd_argv->emplace_back("-skip_verification");
+        }
     }
 
     size_t num_cows = 0;

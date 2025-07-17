@@ -133,19 +133,6 @@ static int tipc_vsock_connect(const char* type_cid_port_str, const char* srv_nam
         close(fd);
         return ret < 0 ? ret : -1;
     }
-    /*
-     * Work around lack of seq packet support. Read a status byte to prevent
-     * the caller from sending more data until srv_name has been read.
-     */
-    int8_t status;
-    ret = TEMP_FAILURE_RETRY(read(fd, &status, sizeof(status)));
-    if (ret != sizeof(status)) {
-        ALOGE("%s: vsock %ld:%ld: failed to read status byte for connect to tipc service name "
-              "\"%s\" (err=%d)\n",
-              __func__, cid, port, srv_name, errno);
-        close(fd);
-        return ret < 0 ? ret : -1;
-    }
     use_vsock_connection = true;
     return fd;
 }

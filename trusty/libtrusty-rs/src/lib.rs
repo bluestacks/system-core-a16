@@ -178,11 +178,6 @@ impl TipcChannel {
         channel.send(service.as_bytes())?;
         trace!("sent tipc port name");
 
-        // Work around lack of seq packet support. Read a status byte to prevent
-        // the caller from sending more data until srv_name has been read.
-        let mut status = [0; 1];
-        channel.recv_no_alloc(&mut status)?;
-        trace!("got status byte: {status:?}");
         Ok(channel)
     }
 
