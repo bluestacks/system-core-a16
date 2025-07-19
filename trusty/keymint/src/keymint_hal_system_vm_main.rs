@@ -25,6 +25,8 @@ use std::{
     ops::DerefMut,
     panic,
     sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 
 const SERVICE_INSTANCE: &str = "default";
@@ -94,8 +96,8 @@ fn inner_main() -> Result<()> {
             .and_then(|service| binder::Accessor::from_binder(s, service))
     })
     .ok_or(anyhow!("failed to create accessor provider"))?;
-    let comm_service = binder::get_interface(INTERNAL_RPC_SERVICE_NAME)
-        .context("failed to get ICommService interface from accessor")?;
+    let comm_service = get_comm_service_with_retry()?;
+    info!("Connected to ICommService.");
     let channel: HalChannel = CommServiceChannel { comm_service }.into();
 
     #[cfg(feature = "nonsecure")]
@@ -131,6 +133,27 @@ fn inner_main() -> Result<()> {
 
     ProcessState::join_thread_pool();
     bail!("Binder thread pool exited unexpectedly, terminating HAL service.");
+}
+
+/// Gets the ICommService binder interface, retrying on failure.
+fn get_comm_service_with_retry() -> Result<Strong<dyn ICommService>> {
+    const MAX_ATTEMPTS: u32 = 5;
+    const RETRY_DELAY: Duration = Duration::from_secs(1);
+
+    for attempt in 1..MAX_ATTEMPTS {
+        match binder::get_interface(INTERNAL_RPC_SERVICE_NAME) {
+            Ok(service) => return Ok(service),
+            Err(e) => {
+                warn!(
+                    "Attempt {}/{} to get ICommService failed: {}. Retrying in {:?}...",
+                    attempt, MAX_ATTEMPTS, e, RETRY_DELAY
+                );
+                thread::sleep(RETRY_DELAY);
+            }
+        }
+    }
+    binder::get_interface(INTERNAL_RPC_SERVICE_NAME)
+        .with_context(|| format!("failed to get ICommService after {} attempts", MAX_ATTEMPTS))
 }
 
 fn setup_logging_and_panic_hook() {

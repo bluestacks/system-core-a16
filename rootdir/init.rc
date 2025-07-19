@@ -1000,6 +1000,7 @@ on post-fs-data
 
     # Create directories for statsd
     mkdir /data/misc/stats-active-metric/ 0770 statsd system
+    mkdir /data/misc/stats-atoms/ 0775 statsd system
     mkdir /data/misc/stats-data/ 0770 statsd system
     mkdir /data/misc/stats-data/restricted-data 0770 statsd system
     mkdir /data/misc/stats-metadata/ 0770 statsd system
