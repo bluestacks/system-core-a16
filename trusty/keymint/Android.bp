@@ -90,7 +90,7 @@ rust_binary {
         "src/keymint_hal_system_vm_main.rs",
     ],
     rustlibs: [
-        "android.keymint.trusty.commservice-rust",
+        "android.trusty.commservice-rust",
         "libanyhow",
         "libkmr_hal_nonsecure",
     ],

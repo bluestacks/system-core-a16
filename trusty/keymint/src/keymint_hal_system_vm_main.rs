@@ -16,7 +16,7 @@
 //! This module implements the HAL service for Keymint (Rust) interacting with
 //! the Trusty VM.
 
-use android_keymint_trusty_commservice::aidl::android::keymint::trusty::commservice::ICommService::ICommService;
+use android_trusty_commservice::aidl::android::trusty::commservice::ICommService::ICommService;
 use anyhow::{anyhow, bail, Context, Result};
 use binder::{self, AccessorProvider, ProcessState, Strong};
 use kmr_hal::{register_binder_services, send_hal_info, SerializedChannel};
@@ -32,7 +32,8 @@ use std::{
 const SERVICE_INSTANCE: &str = "default";
 
 const ACCESSOR_SERVICE_NAME: &str = "android.os.IAccessor/ICommService/security_vm_keymint";
-const INTERNAL_RPC_SERVICE_NAME: &str = "android.keymint.trusty.commservice.ICommService/default";
+const INTERNAL_RPC_SERVICE_NAME: &str =
+    "android.trusty.commservice.ICommService/security_vm_keymint";
 
 #[derive(Debug)]
 struct CommServiceChannel {
