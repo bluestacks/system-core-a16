@@ -57,7 +57,9 @@ enum fb_buffer_type {
 };
 
 struct fastboot_buffer {
+    fb_buffer_type type;
     fb_buffer_type file_type;
+    std::vector<SparsePtr> files;
     int64_t sz;
     unique_fd fd;
     int64_t image_size;
