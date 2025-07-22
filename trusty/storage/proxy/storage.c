@@ -786,7 +786,7 @@ int storage_file_get_max_size(struct storage_msg* msg, const void* r, size_t req
     }
 
     if ((stat.st_mode & S_IFMT) == S_IFBLK) {
-        rc = ioctl(fd, BLKGETSIZE64, &max_size);
+        rc = TEMP_FAILURE_RETRY(ioctl(fd, BLKGETSIZE64, &max_size));
         if (rc < 0) {
             rc = errno;
             ALOGE("%s: error calling ioctl on file (fd=%d): %s\n", __func__, fd, strerror(errno));
@@ -845,7 +845,7 @@ int determine_max_file_size(const char* max_file_size_from) {
               strerror(errno));
         return -1;
     }
-    rc = ioctl(fd, BLKGETSIZE64, &max_size);
+    rc = TEMP_FAILURE_RETRY(ioctl(fd, BLKGETSIZE64, &max_size));
     if (rc < 0) {
         ALOGE("%s: error calling ioctl on file (fd=%d): %s\n", __func__, fd, strerror(errno));
         close(fd);

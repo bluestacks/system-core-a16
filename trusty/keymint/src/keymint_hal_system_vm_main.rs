@@ -31,7 +31,7 @@ use std::{
 
 const SERVICE_INSTANCE: &str = "default";
 
-const ACCESSOR_SERVICE_NAME: &str = "android.os.IAccessor/ICommService/default";
+const ACCESSOR_SERVICE_NAME: &str = "android.os.IAccessor/ICommService/security_vm_keymint";
 const INTERNAL_RPC_SERVICE_NAME: &str = "android.keymint.trusty.commservice.ICommService/default";
 
 #[derive(Debug)]
