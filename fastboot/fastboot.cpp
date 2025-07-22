@@ -1200,6 +1200,7 @@ static void copy_avb_footer(const FlashingPlan* fp, const std::string& partition
 
     uint64_t footer_offset = buf->sz - AVB_FOOTER_SIZE;
     if (0 != data.compare(footer_offset, AVB_FOOTER_MAGIC_LEN, AVB_FOOTER_MAGIC)) {
+        lseek(buf->fd.get(), 0, SEEK_SET);  // IMPORTANT: resets buf->fd before return.
         return;
     }
 
@@ -1214,6 +1215,7 @@ static void copy_avb_footer(const FlashingPlan* fp, const std::string& partition
     }
     buf->fd = std::move(fd);
     buf->sz = partition_size;
+    lseek(buf->fd.get(), 0, SEEK_SET);
 }
 
 void flash_partition_files(IFastBootDriver* fb, const std::string& partition,
@@ -1244,10 +1246,6 @@ static void flash_buf(const FlashingPlan* fp, const std::string& partition,
                    (partition == "boot" || partition == "boot_a" || partition == "boot_b")) {
             rewrite_vbmeta_buffer(buf, true /* vbmeta_in_boot */);
         }
-    }
-
-    if (lseek(buf->fd.get(), 0, SEEK_SET) < 0) {
-        PLOG(FATAL) << "Failed to reset seek position before flashing";
     }
 
     if (int64_t limit = get_sparse_limit(buf->sz, fp); limit > 0) {
