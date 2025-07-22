@@ -377,7 +377,7 @@ static int send_mmc_rpmb_req(int mmc_fd, const struct storage_rpmb_send_req* req
     }
 
     watch_progress(watcher, "rpmb mmc ioctl");
-    rc = ioctl(mmc_fd, MMC_IOC_MULTI_CMD, &mmc.multi);
+    rc = TEMP_FAILURE_RETRY(ioctl(mmc_fd, MMC_IOC_MULTI_CMD, &mmc.multi));
     watch_progress(watcher, "rpmb mmc ioctl done");
     if (rc < 0) {
         ALOGE("%s: mmc ioctl failed: %d, %s\n", __func__, rc, strerror(errno));
@@ -425,7 +425,7 @@ static int send_ufs_rpmb_req(int sg_fd, const struct storage_rpmb_send_req* req,
                           req->reliable_write_size, (void*)write_buf, (unsigned char*)&out_cdb,
                           sense_buffer);
             watch_progress(watcher, "rpmb ufs reliable write");
-            rc = ioctl(sg_fd, SG_IO, &io_hdr);
+            rc = TEMP_FAILURE_RETRY(ioctl(sg_fd, SG_IO, &io_hdr));
             watch_progress(watcher, "rpmb ufs reliable write done");
             if (rc < 0) {
                 ALOGE("%s: ufs ioctl failed: %d, %s\n", __func__, rc, strerror(errno));
@@ -452,7 +452,7 @@ static int send_ufs_rpmb_req(int sg_fd, const struct storage_rpmb_send_req* req,
                           req->write_size, (void*)write_buf, (unsigned char*)&out_cdb,
                           sense_buffer);
             watch_progress(watcher, "rpmb ufs write");
-            rc = ioctl(sg_fd, SG_IO, &io_hdr);
+            rc = TEMP_FAILURE_RETRY(ioctl(sg_fd, SG_IO, &io_hdr));
             watch_progress(watcher, "rpmb ufs write done");
             if (rc < 0) {
                 ALOGE("%s: ufs ioctl failed: %d, %s\n", __func__, rc, strerror(errno));
@@ -469,7 +469,7 @@ static int send_ufs_rpmb_req(int sg_fd, const struct storage_rpmb_send_req* req,
         set_sg_io_hdr(&io_hdr, SG_DXFER_FROM_DEV, sizeof(in_cdb), sizeof(sense_buffer),
                       req->read_size, read_buf, (unsigned char*)&in_cdb, sense_buffer);
         watch_progress(watcher, "rpmb ufs read");
-        rc = ioctl(sg_fd, SG_IO, &io_hdr);
+        rc = TEMP_FAILURE_RETRY(ioctl(sg_fd, SG_IO, &io_hdr));
         watch_progress(watcher, "rpmb ufs read done");
         if (rc < 0) {
             ALOGE("%s: ufs ioctl failed: %d, %s\n", __func__, rc, strerror(errno));
@@ -493,19 +493,19 @@ static int send_virt_rpmb_req(int rpmb_fd, void* read_buf, size_t read_size, con
     int rc;
     uint16_t res_count = read_size / MMC_BLOCK_SIZE;
     uint16_t cmd_count = payload_size / MMC_BLOCK_SIZE;
-    rc = write(rpmb_fd, &res_count, sizeof(res_count));
+    rc = TEMP_FAILURE_RETRY(write(rpmb_fd, &res_count, sizeof(res_count)));
     if (rc < 0) {
         return rc;
     }
-    rc = write(rpmb_fd, &cmd_count, sizeof(cmd_count));
+    rc = TEMP_FAILURE_RETRY(write(rpmb_fd, &cmd_count, sizeof(cmd_count)));
     if (rc < 0) {
         return rc;
     }
-    rc = write(rpmb_fd, payload, payload_size);
+    rc = TEMP_FAILURE_RETRY(write(rpmb_fd, payload, payload_size));
     if (rc < 0) {
         return rc;
     }
-    rc = read(rpmb_fd, read_buf, read_size);
+    rc = TEMP_FAILURE_RETRY(read(rpmb_fd, read_buf, read_size));
     return rc;
 }
 
@@ -609,7 +609,7 @@ int rpmb_open(const char* rpmb_devname, enum dev_type open_dev_type) {
 
         /* For UFS, it is prudent to check we have a sg device by calling an ioctl */
         if (dev_type == UFS_RPMB) {
-            if ((ioctl(rpmb_fd, SG_GET_VERSION_NUM, &sg_version_num) < 0) ||
+            if ((TEMP_FAILURE_RETRY(ioctl(rpmb_fd, SG_GET_VERSION_NUM, &sg_version_num)) < 0) ||
                 (sg_version_num < RPMB_MIN_SG_VERSION_NUM)) {
                 ALOGE("%s is not a sg device, or old sg driver\n", rpmb_devname);
                 return -1;
