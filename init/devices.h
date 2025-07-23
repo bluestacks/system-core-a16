@@ -146,6 +146,7 @@ class DeviceHandler : public UeventHandler {
     static std::string GetPartitionNameForDevice(const std::string& device);
     bool IsBootDeviceStrict() const;
     bool IsBootDevice(const Uevent& uevent) const;
+    void EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) override;
 
   private:
     struct TrackedUevent {

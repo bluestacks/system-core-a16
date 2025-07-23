@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,18 @@
 #pragma once
 
 #include <string>
-#include <vector>
+#include <unordered_map>
 
-extern std::vector<std::string> test_modules;
-extern std::vector<std::string> modules_loaded;
+#include <android-base/result.h>
+
+namespace android {
+namespace modprobe {
+
+std::string CanonicalizeModulePath(const std::string& module_path);
+
+base::Result<void> InitModule(const std::string& path_name,
+                              const std::unordered_map<std::string, std::string>& module_options,
+                              const std::string& parameters = "");
+
+}  // namespace modprobe
+}  // namespace android

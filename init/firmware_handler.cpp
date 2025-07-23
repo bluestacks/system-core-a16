@@ -102,7 +102,7 @@ static bool IsApexActivated() {
 }
 
 static bool NeedsRerunExternalHandler() {
-    static bool first = true;
+    thread_local bool first = true;
 
     // Rerun external handler only on the first try and when apex is activated
     if (first) {
@@ -298,6 +298,12 @@ void FirmwareHandler::HandleUevent(const Uevent& uevent) {
         }
     }
     HandleUeventInternal(uevent);
+}
+
+void FirmwareHandler::EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) {
+    if (uevent.subsystem != "firmware" || uevent.action != "add") return;
+
+    thread_pool.Enqueue(kPriorityFirmware, [&uevent, this] { HandleUeventInternal(uevent); });
 }
 
 }  // namespace init
