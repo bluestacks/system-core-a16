@@ -41,8 +41,8 @@ bool FlashTask::IsDynamicPartition(const ImageSource* source, const FlashTask* t
 
 void FlashTask::Run() {
     auto flash = [&](const std::string& partition) {
-        if (should_flash_in_userspace(fp_->source.get(), partition) &&
-            !is_userspace_fastboot(fp_->fb) && !fp_->force_flash) {
+        if (should_flash_in_userspace(fp_->source.get(), partition) && !is_userspace_fastboot() &&
+            !fp_->force_flash) {
             die("The partition you are trying to flash is dynamic, and "
                 "should be flashed via fastbootd. Please run:\n"
                 "\n"
@@ -53,7 +53,7 @@ void FlashTask::Run() {
         }
         do_flash(partition.c_str(), fname_.c_str(), apply_vbmeta_, fp_);
     };
-    do_for_partitions(fp_->fb, pname_, slot_, flash, true);
+    do_for_partitions(pname_, slot_, flash, true);
 }
 
 std::string FlashTask::ToString() const {
@@ -67,7 +67,7 @@ std::string FlashTask::ToString() const {
 std::string FlashTask::GetPartitionAndSlot() const {
     auto slot = slot_;
     if (slot.empty()) {
-        slot = get_current_slot(fp_->fb);
+        slot = get_current_slot();
     }
     if (slot.empty()) {
         return pname_;
@@ -84,8 +84,8 @@ RebootTask::RebootTask(const FlashingPlan* fp, const std::string& reboot_target)
 
 void RebootTask::Run() {
     if (reboot_target_ == "fastboot") {
-        if (!is_userspace_fastboot(fp_->fb)) {
-            reboot_to_userspace_fastboot(fp_->fb);
+        if (!is_userspace_fastboot()) {
+            reboot_to_userspace_fastboot();
             fp_->fb->WaitForDisconnect();
         }
     } else if (reboot_target_ == "recovery") {
@@ -249,8 +249,8 @@ void UpdateSuperTask::Run() {
     if (fd < 0) {
         return;
     }
-    if (!is_userspace_fastboot(fp_->fb)) {
-        reboot_to_userspace_fastboot(fp_->fb);
+    if (!is_userspace_fastboot()) {
+        reboot_to_userspace_fastboot();
     }
 
     std::string super_name;
@@ -279,7 +279,7 @@ void ResizeTask::Run() {
             fp_->fb->ResizePartition(partition, size_);
         }
     };
-    do_for_partitions(fp_->fb, pname_, slot_, resize_partition, false);
+    do_for_partitions(pname_, slot_, resize_partition, false);
 }
 
 std::string ResizeTask::ToString() const {

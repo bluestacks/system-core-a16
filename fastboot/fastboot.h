@@ -115,7 +115,6 @@ class FlashAllTool {
     std::vector<std::unique_ptr<Task>> CollectTasks();
 
   private:
-    void DumpInfo();
     void CheckRequirements();
     void DetermineSlot();
     void CollectImages();
@@ -150,16 +149,15 @@ class LocalImageSource final : public ImageSource {
 
 char* get_android_product_out();
 bool should_flash_in_userspace(const ImageSource* source, const std::string& partition_name);
-bool is_userspace_fastboot(fastboot::IFastBootDriver* fb);
+bool is_userspace_fastboot();
 void do_flash(const char* pname, const char* fname, const bool apply_vbmeta,
               const FlashingPlan* fp);
-void do_for_partitions(fastboot::IFastBootDriver* fb, const std::string& part,
-                       const std::string& slot, const std::function<void(const std::string&)>& func,
-                       bool force_slot);
+void do_for_partitions(const std::string& part, const std::string& slot,
+                       const std::function<void(const std::string&)>& func, bool force_slot);
 std::string find_item(const std::string& item);
-void reboot_to_userspace_fastboot(fastboot::IFastBootDriver* fb);
+void reboot_to_userspace_fastboot();
 void syntax_error(const char* fmt, ...);
-std::string get_current_slot(fastboot::IFastBootDriver* fb);
+std::string get_current_slot();
 
 // Code for Parsing fastboot-info.txt
 bool CheckFastbootInfoRequirements(const std::vector<std::string>& command,
