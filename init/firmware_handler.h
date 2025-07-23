@@ -51,6 +51,7 @@ class FirmwareHandler : public UeventHandler {
 
     void HandleUevent(const Uevent& uevent) override;
     void ColdbootDone() override;
+    void EnqueueUevent(const Uevent& uevent, ThreadPool& thread_pool) override;
 
   private:
     friend void FirmwareTestWithExternalHandler(const std::string& test_name,

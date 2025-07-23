@@ -65,6 +65,9 @@ init_device_sources = [
     "block_dev_initializer.cpp",
     "bootchart.cpp",
     "builtins.cpp",
+    "coldboot.cpp",
+    "coldboot_runner_subprocess.cpp",
+    "coldboot_runner_thread_pool.cpp",
     "devices.cpp",
     "firmware_handler.cpp",
     "first_stage_console.cpp",
@@ -89,6 +92,7 @@ init_device_sources = [
     "snapuserd_transition.cpp",
     "switch_root.cpp",
     "tradeinmode.cpp",
+    "thread_pool.cpp",
     "uevent_listener.cpp",
     "uevent_dependency_graph.cpp",
     "ueventd.cpp",
@@ -238,6 +242,9 @@ cc_defaults {
         type: "lite",
         export_proto_headers: true,
     },
+    static_libs: [
+        "libueventd_flags",
+    ],
 
     target: {
         recovery: {
@@ -522,6 +529,7 @@ cc_test {
         "rlimit_parser_test.cpp",
         "service_test.cpp",
         "subcontext_test.cpp",
+        "thread_pool_test.cpp",
         "tokenizer_test.cpp",
         "uevent_dependency_graph.cpp",
         "uevent_dependency_graph_test.cpp",
@@ -704,4 +712,16 @@ phony {
         true: [],
         default: ["init_first_stage"],
     }),
+}
+
+aconfig_declarations {
+    name: "ueventd_flags",
+    package: "com.android.ueventd.flags",
+    srcs: ["ueventd.aconfig"],
+    container: "system",
+}
+
+cc_aconfig_library {
+    name: "libueventd_flags",
+    aconfig_declarations: "ueventd_flags",
 }
