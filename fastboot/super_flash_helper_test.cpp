@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include <android-base/file.h>
-#include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <gtest/gtest.h>
 #include <sparse/sparse.h>
@@ -27,11 +26,8 @@
 using android::base::unique_fd;
 
 unique_fd OpenTestFile(const std::string& file, int flags) {
-    if (android::base::StartsWith(file, "/")) {
-        return unique_fd{open(file.c_str(), flags)};
-    }
-
     std::string path = "testdata/" + file;
+
     unique_fd fd(open(path.c_str(), flags));
     if (fd >= 0) {
         return fd;

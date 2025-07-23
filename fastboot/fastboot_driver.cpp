@@ -155,6 +155,15 @@ RetCode FastBootDriver::FlashPartition(const std::string& partition, android::ba
     return Flash(partition);
 }
 
+RetCode FastBootDriver::FlashPartition(const std::string& partition, sparse_file* s, uint32_t size,
+                                       size_t current, size_t total) {
+    RetCode ret;
+    if ((ret = Download(partition, s, size, current, total, false))) {
+        return ret;
+    }
+    return Flash(partition);
+}
+
 RetCode FastBootDriver::Partitions(std::vector<std::tuple<std::string, uint64_t>>* partitions) {
     std::vector<std::string> all;
     RetCode ret;

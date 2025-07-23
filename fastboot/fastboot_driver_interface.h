@@ -17,7 +17,6 @@
 
 #include <string>
 
-#include <sparse/sparse.h>
 #include "android-base/unique_fd.h"
 
 class Transport;
@@ -53,25 +52,11 @@ class IFastBootDriver {
     RetCode virtual Download(const std::string& name, android::base::borrowed_fd fd, size_t size,
                              std::string* response = nullptr,
                              std::vector<std::string>* info = nullptr) = 0;
-    RetCode virtual Download(android::base::borrowed_fd fd, size_t size,
-                             std::string* response = nullptr,
-                             std::vector<std::string>* info = nullptr) = 0;
-    RetCode virtual Download(const std::string& name, const std::vector<char>& buf,
-                             std::string* response = nullptr,
-                             std::vector<std::string>* info = nullptr) = 0;
-    RetCode virtual Download(const std::vector<char>& buf, std::string* response = nullptr,
-                             std::vector<std::string>* info = nullptr) = 0;
-    RetCode virtual Download(const std::string& partition, struct sparse_file* s, uint32_t sz,
-                             size_t current, size_t total, bool use_crc,
-                             std::string* response = nullptr,
-                             std::vector<std::string>* info = nullptr) = 0;
     RetCode virtual RawCommand(const std::string& cmd, const std::string& message,
                                std::string* response = nullptr,
                                std::vector<std::string>* info = nullptr, int* dsize = nullptr) = 0;
     RetCode virtual ResizePartition(const std::string& partition, const std::string& size) = 0;
     RetCode virtual Erase(const std::string& partition, std::string* response = nullptr,
-                          std::vector<std::string>* info = nullptr) = 0;
-    RetCode virtual Flash(const std::string& partition, std::string* response = nullptr,
                           std::vector<std::string>* info = nullptr) = 0;
     virtual ~IFastBootDriver() = default;
 };

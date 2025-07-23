@@ -38,19 +38,6 @@ class MockFastbootDriver : public IFastBootDriver {
                 (const std::string&, android::base::borrowed_fd, size_t, std::string*,
                  std::vector<std::string>*),
                 (override));
-    MOCK_METHOD(RetCode, Download,
-                (android::base::borrowed_fd, size_t, std::string*, std::vector<std::string>*),
-                (override));
-    MOCK_METHOD(RetCode, Download,
-                (const std::string&, const std::vector<char>&, std::string*,
-                 std::vector<std::string>*),
-                (override));
-    MOCK_METHOD(RetCode, Download,
-                (const std::vector<char>&, std::string*, std::vector<std::string>*), (override));
-    MOCK_METHOD(RetCode, Download,
-                (const std::string&, sparse_file*, uint32_t, size_t, size_t, bool, std::string*,
-                 std::vector<std::string>*),
-                (override));
     MOCK_METHOD(RetCode, RawCommand,
                 (const std::string&, const std::string&, std::string*, std::vector<std::string>*,
                  int*),
@@ -59,8 +46,6 @@ class MockFastbootDriver : public IFastBootDriver {
     MOCK_METHOD(RetCode, Erase, (const std::string&, std::string*, std::vector<std::string>*),
                 (override));
     MOCK_METHOD(RetCode, WaitForDisconnect, (), (override));
-    MOCK_METHOD(RetCode, Flash, (const std::string&, std::string*, std::vector<std::string>*),
-                (override));
 };
 
 }  // namespace fastboot

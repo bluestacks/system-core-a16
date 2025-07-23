@@ -73,19 +73,20 @@ class FastBootDriver : public IFastBootDriver {
                      std::string* response = nullptr,
                      std::vector<std::string>* info = nullptr) override;
     RetCode Download(android::base::borrowed_fd fd, size_t size, std::string* response = nullptr,
-                     std::vector<std::string>* info = nullptr) override;
+                     std::vector<std::string>* info = nullptr);
     RetCode Download(const std::string& name, const std::vector<char>& buf,
-                     std::string* response = nullptr,
-                     std::vector<std::string>* info = nullptr) override;
+                     std::string* response = nullptr, std::vector<std::string>* info = nullptr);
     RetCode Download(const std::vector<char>& buf, std::string* response = nullptr,
-                     std::vector<std::string>* info = nullptr) override;
+                     std::vector<std::string>* info = nullptr);
     RetCode Download(const std::string& partition, struct sparse_file* s, uint32_t sz,
                      size_t current, size_t total, bool use_crc, std::string* response = nullptr,
-                     std::vector<std::string>* info = nullptr) override;
+                     std::vector<std::string>* info = nullptr);
+    RetCode Download(sparse_file* s, bool use_crc = false, std::string* response = nullptr,
+                     std::vector<std::string>* info = nullptr);
     RetCode Erase(const std::string& partition, std::string* response = nullptr,
                   std::vector<std::string>* info = nullptr) override;
     RetCode Flash(const std::string& partition, std::string* response = nullptr,
-                  std::vector<std::string>* info = nullptr) override;
+                  std::vector<std::string>* info = nullptr);
     RetCode GetVar(const std::string& key, std::string* val,
                    std::vector<std::string>* info = nullptr) override;
     RetCode GetVarAll(std::vector<std::string>* response);
@@ -108,6 +109,8 @@ class FastBootDriver : public IFastBootDriver {
     RetCode FlashPartition(const std::string& partition, const std::vector<char>& data);
     RetCode FlashPartition(const std::string& partition, android::base::borrowed_fd fd,
                            uint32_t sz) override;
+    RetCode FlashPartition(const std::string& partition, sparse_file* s, uint32_t sz,
+                           size_t current, size_t total);
 
     RetCode Partitions(std::vector<std::tuple<std::string, uint64_t>>* partitions);
     RetCode Require(const std::string& var, const std::vector<std::string>& allowed, bool* reqmet,
@@ -127,9 +130,6 @@ class FastBootDriver : public IFastBootDriver {
 
     RetCode RawCommand(const std::string& cmd, std::string* response = nullptr,
                        std::vector<std::string>* info = nullptr, int* dsize = nullptr);
-
-    RetCode Download(struct sparse_file* s, bool use_crc = false, std::string* response = nullptr,
-                     std::vector<std::string>* info = nullptr);
 
   protected:
     RetCode DownloadCommand(uint32_t size, std::string* response = nullptr,
