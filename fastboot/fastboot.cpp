@@ -112,7 +112,7 @@ static std::string g_dtb_path;
 static bool g_disable_verity = false;
 static bool g_disable_verification = false;
 
-fastboot::IFastBootDriver* fb = nullptr;
+fastboot::FastBootDriver* fb = nullptr;
 
 static std::vector<Image> images = {
         // clang-format off
