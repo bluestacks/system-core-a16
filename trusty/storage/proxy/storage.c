@@ -407,11 +407,22 @@ static int open_possibly_mapped_file(const char* short_path, const char* full_pa
         return -1;
     }
 
-    /* Try and open mapping file */
     open_flags &= ~(O_CREAT | O_EXCL);
+
+    /*
+     * After checking root path and clearing O_CREAT, try to open symlink first. We need to try the
+     * symlink after checking the root path, not before, in case the root path becomes available
+     * while we are running.
+     */
+    int fd = TEMP_FAILURE_RETRY(open(full_path, open_flags, S_IRUSR | S_IWUSR));
+    if (fd >= 0) {
+        ALOGI("%s: Opened %s instead of %s\n", __func__, full_path, mapping_entry->backing_storage);
+        return fd;
+    }
+
+    /* Try and open mapping file */
     ALOGI("%s Attempting to open mapped file: %s\n", __func__, mapping_entry->backing_storage);
-    int fd =
-            TEMP_FAILURE_RETRY(open(mapping_entry->backing_storage, open_flags, S_IRUSR | S_IWUSR));
+    fd = TEMP_FAILURE_RETRY(open(mapping_entry->backing_storage, open_flags, S_IRUSR | S_IWUSR));
     if (fd < 0) {
         ALOGE("%s Failed to open mapping file: %s\n", __func__, mapping_entry->backing_storage);
         return -1;
@@ -503,7 +514,8 @@ int storage_file_open(struct storage_msg* msg, const void* r, size_t req_len,
                                            &mapping_entry_need_symlink);
         } else {
             /* try open first */
-            rc = TEMP_FAILURE_RETRY(open(path, open_flags, S_IRUSR | S_IWUSR));
+            rc = open_possibly_mapped_file(req->name, path, open_flags,
+                                           &mapping_entry_need_symlink);
             if (rc == -1 && errno == ENOENT) {
                 /* then try open with O_CREATE */
                 open_flags |= O_CREAT;
@@ -512,11 +524,10 @@ int storage_file_open(struct storage_msg* msg, const void* r, size_t req_len,
                 rc = open_possibly_mapped_file(req->name, path, open_flags,
                                                &mapping_entry_need_symlink);
             }
-
         }
     } else {
-        /* open an existing file */
-        rc = TEMP_FAILURE_RETRY(open(path, open_flags, S_IRUSR | S_IWUSR));
+        /* open an existing file. */
+        rc = open_possibly_mapped_file(req->name, path, open_flags, &mapping_entry_need_symlink);
     }
 
     if (rc < 0) {
