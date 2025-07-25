@@ -1000,12 +1000,10 @@ void HandlePowerctlMessage(const std::string& command) {
         }
     } else if (cmd_params[0] == "reboot") {
         cmd = ANDROID_RB_RESTART2;
-        if (cmd_params.size() >= 2) {
+        // Microdroid essentially treats reboot the same as shutdown, so
+        // compile out this branch to avoid bootloader_message dependency.
+        if (!IsMicrodroid() && cmd_params.size() >= 2) {
             reboot_target = cmd_params[1];
-            if (IsMicrodroid()) {
-                LOG(ERROR) << "reboot target not supported in microdroid: " << reboot_target;
-                return;
-            }
             if (reboot_target == "userspace") {
                 LOG(ERROR) << "Userspace reboot is deprecated.";
                 return;
