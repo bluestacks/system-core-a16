@@ -54,6 +54,8 @@ static const char *ssdir_name;
 /* List head for storage mapping, elements added at init, and never removed */
 static struct storage_mapping_node* storage_mapping_head;
 
+static void sync_parent(const char* path, struct watcher* watcher);
+
 #ifdef VENDOR_FS_READY_PROPERTY
 
 /*
@@ -161,7 +163,7 @@ static struct storage_mapping_node* get_pending_symlink_mapping(uint32_t handle)
     return NULL;
 };
 
-static int possibly_symlink_and_clear_mapping(uint32_t handle) {
+static int possibly_symlink_and_clear_mapping(uint32_t handle, struct watcher* watcher) {
     struct storage_mapping_node* entry = get_pending_symlink_mapping(handle);
     if (entry == NULL) {
         /* No mappings pending */
@@ -185,6 +187,7 @@ static int possibly_symlink_and_clear_mapping(uint32_t handle) {
         free(path);
         return rc;
     }
+    sync_parent(path, watcher);
     free(path);
 
     clear_fd_symlink_status(handle, entry);
@@ -620,7 +623,7 @@ int storage_file_write(struct storage_msg* msg, const void* r, size_t req_len,
     }
 
     /* Handle any delayed symlinking for this handle if any */
-    rc = possibly_symlink_and_clear_mapping(req->handle);
+    rc = possibly_symlink_and_clear_mapping(req->handle, watcher);
     if (rc < 0) {
         ALOGE("Failed to symlink storage\n");
         msg->result = STORAGE_ERR_GENERIC;
