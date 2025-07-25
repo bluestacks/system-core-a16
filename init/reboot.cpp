@@ -666,12 +666,11 @@ static Result<void> KillZramBackingDevice() {
     return {};
 }
 
-// Stops given services, waits for them to be stopped for |timeout| ms.
+// Stops given services, and returns pids to be waited on.
 // If terminate is true, then SIGTERM is sent to services, otherwise SIGKILL is sent.
 // Note that services are stopped in order given by |ServiceList::services_in_shutdown_order|
 // function.
-static void StopServices(const std::set<std::string>& services, std::chrono::milliseconds timeout,
-                         bool terminate) {
+static std::vector<pid_t> StopServices(const std::set<std::string>& services, bool terminate) {
     LOG(INFO) << "Stopping " << services.size() << " services by sending "
               << (terminate ? "SIGTERM" : "SIGKILL");
     std::vector<pid_t> pids;
@@ -689,29 +688,99 @@ static void StopServices(const std::set<std::string>& services, std::chrono::mil
             s->Stop();
         }
     }
+    return pids;
+}
+
+// Retrieves all processes whose process group is not lead by any service which init tracks. In
+// other words, these are processes which can't get killed by stopping a service.
+static std::vector<android::procinfo::ProcessInfo> GetAllUntrackedProcesses() {
+    std::vector<android::procinfo::ProcessInfo> untracked;
+    std::string error;
+    pid_t init_pgid = getpgid(0);  // my pgid
+    for (const auto& pid : android::base::AllPids{}) {
+        android::procinfo::ProcessInfo info;
+        if (!android::procinfo::GetProcessInfo(pid, &info, &error)) {
+            LOG(WARNING) << "Cannot get info for pid " << pid << ": " << error;
+            continue;
+        }
+        bool init_or_kthread = (info.ppid == 0) || (info.ppid == 2);
+        if (init_or_kthread) {
+            continue;
+        }
+        // This is mainly to filter out snapuserd which is used for OTA. We shouldn't kill it during
+        // reboot until the very end as it may be having I/Os. This condition in theory capture more
+        // processes than just snapuserd, and it's fine; we don't have to kill them early. They will
+        // eventually be killed via sysrq.
+        bool init_subprocess = (info.ppid == 1) && (info.pgrp == init_pgid) && (info.uid == 0);
+        if (init_subprocess) {
+            continue;
+        }
+        bool tracked = ServiceList::GetInstance().FindService(info.pgrp, &Service::pid) != nullptr;
+        if (!tracked) {
+            untracked.push_back(std::move(info));
+        }
+    }
+    return untracked;
+}
+
+static std::set<pid_t> StopUntrackedProcesses(bool terminate) {
+    std::set<pid_t> groups_to_stop;
+    for (auto info : GetAllUntrackedProcesses()) {
+        groups_to_stop.insert(info.pgrp);
+    }
+
+    int signum = terminate ? SIGTERM : SIGKILL;
+    std::string signame = SignalName(signum);
+    for (pid_t pgid : groups_to_stop) {
+        LOG(INFO) << "Stopping untracked process group " << pgid << " by sending " << signame;
+        if (killpg(pgid, signum) == -1) {
+            LOG(ERROR) << "Failed to send " << signame << " to process group " << pgid << ": "
+                       << strerror(errno);
+        }
+    }
+    return groups_to_stop;
+}
+
+// Wait for the given pids to be reaped until |timeout| expires, logs all pids that failed to stop
+// after provided timeout. Returns number of violators
+static int WaitAndLogViolations(const std::vector<pid_t> pids, std::chrono::milliseconds timeout) {
     if (timeout > 0ms) {
         WaitToBeReaped(Service::GetSigchldFd(), pids, timeout);
     } else {
         // Even if we don't to wait for services to stop, we still optimistically reap zombies.
         ReapAnyOutstandingChildren();
     }
-}
 
-// Like StopServices, but also logs all the services that failed to stop after the provided timeout.
-// Returns number of violators.
-int StopServicesAndLogViolations(const std::set<std::string>& services,
-                                 std::chrono::milliseconds timeout, bool terminate) {
-    StopServices(services, timeout, terminate);
     int still_running = 0;
+    // a pid can be of a service or an untracked process
     for (const auto& s : ServiceList::GetInstance()) {
-        if (s->IsRunning() && services.count(s->name())) {
+        if (s->IsRunning() && std::find(pids.begin(), pids.end(), s->pid()) != pids.end()) {
             LOG(ERROR) << "[service-misbehaving] : service '" << s->name() << "' is still running "
-                       << timeout.count() << "ms after receiving "
-                       << (terminate ? "SIGTERM" : "SIGKILL");
+                       << timeout.count() << "ms after stopped";
+            still_running++;
+        }
+    }
+    for (auto info : GetAllUntrackedProcesses()) {
+        if (std::find(pids.begin(), pids.end(), info.pid) != pids.end()) {
+            LOG(INFO)
+                    << std::format(
+                               "Untracked process: pid: {} name: ({}) ppid: {} pgrp: {} state: {}",
+                               info.pid, info.name, info.ppid, info.pgrp,
+                               static_cast<char>(info.state))
+                    << " is still running " << timeout.count() << "ms after stopped";
             still_running++;
         }
     }
     return still_running;
+}
+
+// Test-only function:
+// Like StopServices, but also waits for the services to fully stop, and also logs all the services
+// that failed to stop after the provided timeout.  Returns number of violators.
+int StopServicesAndLogViolations(const std::set<std::string>& services,
+                                 std::chrono::milliseconds timeout, bool terminate) {
+    auto pids = StopServices(services, terminate);
+    return WaitAndLogViolations(pids, timeout);
 }
 
 static Result<void> UnmountAllApexes() {
@@ -849,10 +918,17 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     // optional shutdown step
     // 1. terminate all services except shutdown critical ones. wait for delay to finish
     if (clean_shutdown_timeout > 0ms) {
-        StopServicesAndLogViolations(stop_first, clean_shutdown_timeout / 2, true /* SIGTERM */);
+        auto pids = StopServices(stop_first, true /* SIGTERM */);
+        auto untracked_pids = StopUntrackedProcesses(true /* SIGTERM */);
+        pids.insert(pids.end(), untracked_pids.begin(), untracked_pids.end());
+        WaitAndLogViolations(pids, clean_shutdown_timeout / 2);
     }
     // Send SIGKILL to ones that didn't terminate cleanly.
-    StopServicesAndLogViolations(stop_first, 0ms, false /* SIGKILL */);
+    auto pids = StopServices(stop_first, false /* SIGKILL */);
+    auto untracked_pids = StopUntrackedProcesses(false /* SIGKILL */);
+    pids.insert(pids.end(), untracked_pids.begin(), untracked_pids.end());
+    WaitAndLogViolations(pids, 0ms);
+
     SubcontextTerminate();
     // Reap subcontext pids.
     ReapAnyOutstandingChildren();
@@ -869,7 +945,8 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         LOG(INFO) << "vold not running, skipping vold shutdown";
     }
     // logcat stopped here
-    StopServices(kDebuggingServices, 0ms, false /* SIGKILL */);
+    pids = StopServices(kDebuggingServices, false /* SIGKILL */);
+    WaitAndLogViolations(pids, 0ms);
     // 4. sync, try umount, and optionally run fsck for user shutdown
     {
         Timer sync_timer;
