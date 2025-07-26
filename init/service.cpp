@@ -216,7 +216,7 @@ void Service::KillProcessGroup(int signal) {
         if (r == 0) process_cgroup_empty_ = true;
     }
 
-    if (oom_score_adjust_ != DEFAULT_OOM_SCORE_ADJUST) {
+    if (!IsMicrodroid() && oom_score_adjust_ != DEFAULT_OOM_SCORE_ADJUST) {
         LmkdUnregister(name_, pid_);
     }
 }
@@ -755,7 +755,11 @@ Result<void> Service::Start() {
     }
 
     if (oom_score_adjust_ != DEFAULT_OOM_SCORE_ADJUST) {
-        LmkdRegister(name_, uid(), pid_, oom_score_adjust_);
+        if (IsMicrodroid()) {
+            LOG(ERROR) << "oom_score_adjust not supported in microdroid";
+        } else {
+            LmkdRegister(name_, uid(), pid_, oom_score_adjust_);
+        }
     }
 
     if (Result<void> result = cgroups_activated.Write(kCgroupsActivated); !result.ok()) {
