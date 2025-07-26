@@ -37,6 +37,7 @@
 #include <sys/wait.h>
 
 #include <chrono>
+#include <map>
 #include <memory>
 #include <set>
 #include <thread>
@@ -672,15 +673,23 @@ static std::vector<pid_t> StopServices(const std::set<std::string>& services, bo
 // Retrieves all processes whose process group is not lead by any service which init tracks. In
 // other words, these are processes which can't get killed by stopping a service.
 static std::vector<android::procinfo::ProcessInfo> GetAllUntrackedProcesses() {
-    std::vector<android::procinfo::ProcessInfo> untracked;
+    std::map<pid_t, android::procinfo::ProcessInfo> untracked;
     std::string error;
     pid_t init_pgid = getpgid(0);  // my pgid
+    pid_t adbd_pid = -1;           // not found
     for (const auto& pid : android::base::AllPids{}) {
         android::procinfo::ProcessInfo info;
         if (!android::procinfo::GetProcessInfo(pid, &info, &error)) {
             LOG(WARNING) << "Cannot get info for pid " << pid << ": " << error;
             continue;
         }
+
+        // AllPids is not guaranteed to return PIDs in sorted order. Record the pid of adbd in this
+        // loop, and find its descendants in another loop below.
+        if (info.name == "adbd" && info.ppid == 1) {
+            adbd_pid = info.pid;
+        }
+
         bool init_or_kthread = (info.ppid == 0) || (info.ppid == 2);
         if (init_or_kthread) {
             continue;
@@ -693,12 +702,43 @@ static std::vector<android::procinfo::ProcessInfo> GetAllUntrackedProcesses() {
         if (init_subprocess) {
             continue;
         }
+
         bool tracked = ServiceList::GetInstance().FindService(info.pgrp, &Service::pid) != nullptr;
         if (!tracked) {
-            untracked.push_back(std::move(info));
+            untracked.insert({info.pid, std::move(info)});
         }
     }
-    return untracked;
+    // If there's adb commands running, don't kill them early, especially before adbd is off.
+    // Otherwise, the host-side will notice the termination of the command, instead of adb
+    // disconnection.  Some host-side tools (ex: `adb reboot`) expect and
+    // handle disconnection gracefully, but assert on the termination of commands.
+    auto check_if_descendant_of_adbd = [&](const android::procinfo::ProcessInfo& info) {
+        const android::procinfo::ProcessInfo* cur = &info;
+        while (cur->ppid != 1) {
+            if (cur->ppid == adbd_pid) return true;
+            if (auto parent = untracked.find(cur->ppid); parent != untracked.end()) {
+                cur = &(parent->second);
+                continue;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    };
+    std::vector<pid_t> adbd_procs;
+    for (const auto& pair : untracked) {
+        if (check_if_descendant_of_adbd(pair.second)) {
+            adbd_procs.push_back(pair.first);
+        }
+    }
+    std::vector<android::procinfo::ProcessInfo> ret;
+    for (auto it = untracked.begin(); it != untracked.end();) {
+        auto nh = untracked.extract(it++);
+        if (std::find(adbd_procs.begin(), adbd_procs.end(), nh.key()) == adbd_procs.end()) {
+            ret.push_back(std::move(nh.mapped()));
+        }
+    }
+    return ret;
 }
 
 static std::set<pid_t> StopUntrackedProcesses(bool terminate) {
