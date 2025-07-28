@@ -90,7 +90,7 @@ fn inner_main() -> Result<()> {
             .and_then(|service| binder::Accessor::from_binder(s, service))
     })
     .ok_or(anyhow!("failed to create accessor provider"))?;
-    let comm_service = binder::get_interface(INTERNAL_RPC_SERVICE_NAME)
+    let comm_service = binder::wait_for_interface(INTERNAL_RPC_SERVICE_NAME)
         .context("failed to get ICommService interface from accessor")?;
     let channel: HalChannel = CommServiceChannel { comm_service }.into();
 
