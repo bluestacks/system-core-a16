@@ -94,7 +94,7 @@ static int parse_and_append_file_mapping(const char* file_mapping) {
     *new_node = (struct storage_mapping_node){.file_name = file_name,
                                               .backing_storage = backing_storage,
                                               .next = storage_mapping_head,
-                                              .fd = -1};
+                                              .pending_symlink_fd = -1};
     storage_mapping_head = new_node;
     return 0;
 }
