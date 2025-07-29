@@ -26,7 +26,7 @@ struct storage_mapping_node {
     struct storage_mapping_node* next;
     const char* file_name;
     const char* backing_storage;
-    int fd;
+    int pending_symlink_fd;
 };
 
 int storage_file_delete(struct storage_msg* msg, const void* req, size_t req_len,

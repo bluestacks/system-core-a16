@@ -143,19 +143,6 @@ class MountEntry {
         }
     }
 
-    void DoFsck() {
-        int st;
-        if (IsExt4()) {
-            const char* ext4_argv[] = {
-                    "/system/bin/e2fsck",
-                    "-y",
-                    mnt_fsname_.c_str(),
-            };
-            logwrap_fork_execvp(arraysize(ext4_argv), ext4_argv, &st, false, LOG_KLOG, true,
-                                nullptr);
-        }
-    }
-
     static bool IsBlockDevice(const struct mntent& mntent) {
         return android::base::StartsWith(mntent.mnt_fsname, "/dev/block");
     }
@@ -395,7 +382,7 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout, bool ota_u
     ReapAnyOutstandingChildren();
 
     Timer t;
-    /* If the current waiting is not good enough, give up and leave it to e2fsck after reboot to
+    /* If the current waiting is not good enough, give up and leave it to fsck after reboot to
      * fix it.
      */
     while (true) {
@@ -530,16 +517,12 @@ static bool UmountDynamicPartitions(const std::vector<std::string>& dynamic_part
  *
  * return true when umount was successful. false when timed out.
  */
-static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
-                                   std::chrono::milliseconds timeout) {
+static UmountStat TryUmount(unsigned int cmd, std::chrono::milliseconds timeout) {
     Timer t;
     std::vector<MountEntry> block_devices;
     std::vector<MountEntry> emulated_devices;
     std::vector<std::string> dynamic_partitions;
 
-    if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices)) {
-        return UMOUNT_STAT_ERROR;
-    }
     bool ota_update_in_progress = false;
     if (!IsMicrodroid()) {
         auto sm = snapshot::SnapshotManager::New();
@@ -588,11 +571,6 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
         if ((st != UMOUNT_STAT_SUCCESS) && DUMP_ON_UMOUNT_FAILURE) DumpUmountDebuggingInfo();
     }
 
-    if (stat == UMOUNT_STAT_SUCCESS && run_fsck) {
-        for (auto& entry : block_devices) {
-            entry.DoFsck();
-        }
-    }
     return stat;
 }
 
@@ -735,10 +713,9 @@ static Result<void> UnmountAllApexes() {
 // cmd ANDROID_RB_* as defined in android_reboot.h
 // reason Reason string like "reboot", "shutdown,userrequested"
 // reboot_target Reboot target string like "bootloader". Otherwise, it should be an empty string.
-// run_fsck Whether to run fsck after umount is done.
 //
-static void DoReboot(unsigned int cmd, const std::string& reason, const std::string& reboot_target,
-                     bool run_fsck) {
+static void DoReboot(unsigned int cmd, const std::string& reason,
+                     const std::string& reboot_target) {
     Timer t;
     LOG(INFO) << "Reboot start, reason: " << reason << ", reboot_target: " << reboot_target;
 
@@ -811,7 +788,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         }
     }
 
-    // remaining operations (specifically fsck) may take a substantial duration
+    // remaining operations may take a substantial duration
     if (!do_shutdown_animation && (cmd == ANDROID_RB_POWEROFF || is_thermal_shutdown)) {
         TurnOffBacklight();
     }
@@ -870,7 +847,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     }
     // logcat stopped here
     StopServices(kDebuggingServices, 0ms, false /* SIGKILL */);
-    // 4. sync, try umount, and optionally run fsck for user shutdown
+    // 4. sync, and try umount
     {
         Timer sync_timer;
         LOG(INFO) << "sync() before umount...";
@@ -885,7 +862,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     if (auto ret = UnmountAllApexes(); !ret.ok()) {
         LOG(ERROR) << ret.error();
     }
-    UmountStat stat = TryUmountAndFsck(cmd, run_fsck, clean_shutdown_timeout - t.duration());
+    UmountStat stat = TryUmount(cmd, clean_shutdown_timeout - t.duration());
     // Follow what linux shutdown is doing: one more sync with little bit delay
     {
         Timer sync_timer;
@@ -981,20 +958,14 @@ void HandlePowerctlMessage(const std::string& command) {
     unsigned int cmd = 0;
     std::vector<std::string> cmd_params = Split(command, ",");
     std::string reboot_target = "";
-    bool run_fsck = false;
     bool command_invalid = false;
 
     if (cmd_params[0] == "shutdown") {
         cmd = ANDROID_RB_POWEROFF;
         if (cmd_params.size() >= 2) {
-            if (cmd_params[1] == "userrequested") {
-                // The shutdown reason is PowerManager.SHUTDOWN_USER_REQUESTED.
-                // Run fsck once the file system is remounted in read-only mode.
-                run_fsck = true;
-            } else if (cmd_params[1] == "thermal") {
+            if (cmd_params[1] == "thermal") {
                 // Turn off sources of heat immediately.
                 TurnOffBacklight();
-                // run_fsck is false to avoid delay
                 cmd = ANDROID_RB_THERMOFF;
             }
         }
@@ -1089,8 +1060,8 @@ void HandlePowerctlMessage(const std::string& command) {
     // Queue shutdown trigger first
     ActionManager::GetInstance().QueueEventTrigger("shutdown");
     // Queue built-in shutdown_done
-    auto shutdown_handler = [cmd, command, reboot_target, run_fsck](const BuiltinArguments&) {
-        DoReboot(cmd, command, reboot_target, run_fsck);
+    auto shutdown_handler = [cmd, command, reboot_target](const BuiltinArguments&) {
+        DoReboot(cmd, command, reboot_target);
         return Result<void>{};
     };
     ActionManager::GetInstance().QueueBuiltinAction(shutdown_handler, "shutdown_done");

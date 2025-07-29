@@ -125,6 +125,11 @@ void DmTargetVerity::CheckAtMostOnce() {
     optional_args_.emplace_back("check_at_most_once");
 }
 
+void DmTargetVerity::TryVerifyInTasklet() {
+    LOG(INFO) << "Adding try_verify_in_tasklet.";
+    optional_args_.emplace_back("try_verify_in_tasklet");
+}
+
 std::string DmTargetVerity::GetParameterString() const {
     std::string base = android::base::Join(base_args_, " ");
     if (optional_args_.empty()) {
