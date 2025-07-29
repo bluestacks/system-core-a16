@@ -19,7 +19,7 @@
 use android_trusty_commservice::aidl::android::trusty::commservice::ICommService::ICommService;
 use anyhow::{anyhow, bail, Context, Result};
 use binder::{self, AccessorProvider, ProcessState, Strong};
-use kmr_hal::{register_binder_services, send_hal_info, SerializedChannel};
+use kmr_hal::{register_binder_services, send_hal_info, SerializedChannel, ALL_HALS};
 use log::{error, info, warn};
 use std::{
     ops::DerefMut,
@@ -99,7 +99,7 @@ fn inner_main() -> Result<()> {
     #[cfg(feature = "nonsecure")]
     kmr_hal_nonsecure::send_boot_info_and_attestation_id_info(&channel.0)?;
 
-    register_binder_services(&channel.0, SERVICE_INSTANCE)?;
+    register_binder_services(&channel.0, ALL_HALS, SERVICE_INSTANCE)?;
 
     // Send the HAL service information to the TA
     channel.with(|c| send_hal_info(c).context("failed to populate HAL info"))?;
