@@ -593,6 +593,26 @@ static Result<void> KillZramBackingDevice() {
         return {};
     }
 
+    // shutdown zram handle even if it is mis-configured without a backing device.
+    Timer swap_timer;
+    LOG(INFO) << "swapoff() start...";
+    if (swapoff(ZRAM_DEVICE) == -1) {
+        if (errno == EINVAL) {
+            LOG(INFO) << "No active swap on " << ZRAM_DEVICE << "; skipping swapoff.";
+        } else if (errno == ENOENT) {
+            LOG(INFO) << ZRAM_DEVICE << " does not exist; skipping swapoff.";
+        } else {
+            return ErrnoError() << "zram_backing_dev: swapoff(" << ZRAM_DEVICE << ") failed";
+        }
+    } else {
+        LOG(INFO) << "swapoff() took " << swap_timer;
+    }
+
+    if (!WriteStringToFile("1", ZRAM_RESET)) {
+        return Error() << "zram_backing_dev: reset (" << ZRAM_RESET << ")"
+                       << " failed";
+    }
+
     if (access(ZRAM_BACK_DEV, F_OK) != 0 && errno == ENOENT) {
         LOG(INFO) << "No zram backing device configured";
         return {};
@@ -607,18 +627,6 @@ static Result<void> KillZramBackingDevice() {
     if (android::base::StartsWith(backing_dev, "none")) {
         LOG(INFO) << "No zram backing device configured";
         return {};
-    }
-
-    // shutdown zram handle
-    Timer swap_timer;
-    LOG(INFO) << "swapoff() start...";
-    if (swapoff(ZRAM_DEVICE) == -1) {
-        return ErrnoError() << "zram_backing_dev: swapoff (" << backing_dev << ")" << " failed";
-    }
-    LOG(INFO) << "swapoff() took " << swap_timer;
-
-    if (!WriteStringToFile("1", ZRAM_RESET)) {
-        return Error() << "zram_backing_dev: reset (" << backing_dev << ")" << " failed";
     }
 
     if (!android::base::ReadFileToString(ZRAM_BACK_DEV, &backing_dev)) {
