@@ -17,6 +17,7 @@
 use clap::Parser;
 use kmr_hal::{
     extract_rsp, register_binder_services, send_hal_info, HalServiceError, SerializedChannel,
+    ALL_HALS,
 };
 use log::{error, info, warn};
 use std::{
@@ -124,7 +125,7 @@ fn inner_main() -> Result<(), HalServiceError> {
     #[cfg(feature = "nonsecure")]
     kmr_hal_nonsecure::send_boot_info_and_attestation_id_info(&tipc_channel)?;
 
-    register_binder_services(&tipc_channel, SERVICE_INSTANCE)?;
+    register_binder_services(&tipc_channel, ALL_HALS, SERVICE_INSTANCE)?;
 
     // Send the HAL service information to the TA
     send_hal_info(tipc_channel.lock().unwrap().deref_mut())
