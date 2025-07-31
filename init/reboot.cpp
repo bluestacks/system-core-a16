@@ -761,7 +761,7 @@ static std::set<pid_t> StopUntrackedProcesses(bool terminate) {
 
 // Wait for the given pids to be reaped until |timeout| expires, logs all pids that failed to stop
 // after provided timeout. Returns number of violators
-static int WaitAndLogViolations(const std::vector<pid_t> pids, std::chrono::milliseconds timeout) {
+static int WaitAndLogViolations(const std::vector<pid_t>& pids, std::chrono::milliseconds timeout) {
     if (timeout > 0ms) {
         WaitToBeReaped(Service::GetSigchldFd(), pids, timeout);
     } else {
