@@ -67,7 +67,9 @@ base::Result<void> InitModule(const std::string& path_name,
     }
     int ret = syscall(__NR_finit_module, fd.get(), options.c_str(), 0);
     if (ret != 0) {
-        PLOG(ERROR) << "Failed to insmod '" << path_name << "' with args '" << options << "'";
+        if (errno != EEXIST) {
+            PLOG(ERROR) << "Failed to insmod '" << path_name << "' with args '" << options << "'";
+        }
         return android::base::ErrnoError();
     }
     LOG(INFO) << "Loaded kernel module " << path_name;
