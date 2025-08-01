@@ -940,6 +940,18 @@ static void property_initialize_ro_product_props() {
             }
         }
     }
+
+    // ro.build.product property is obsolete and replaced with ro.product.device, but define it for
+    // the compatibility with old features.
+    std::string device_name = GetProperty("ro.product.device", EMPTY);
+    if (GetProperty("ro.build.product", EMPTY).empty() && !device_name.empty()) {
+        std::string error;
+        auto res = PropertySetNoSocket("ro.build.product", device_name, &error);
+        if (res != PROP_SUCCESS) {
+            LOG(ERROR) << "Failed to set ro.build.product to " << device_name << ": err=" << res
+                       << " (" << error << ")";
+        }
+    }
 }
 
 static void property_initialize_build_id() {
