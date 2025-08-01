@@ -1424,8 +1424,8 @@ void PropertyInit() {
     // If arguments are passed both on the command line and in DT,
     // properties set in DT always have priority over the command-line ones.
     ProcessKernelDt();
-    ProcessKernelCmdline();
     ProcessBootconfig();
+    ProcessKernelCmdline();
 
     // Propagate the kernel variables to internal variables
     // used by init as well as the current required properties.
