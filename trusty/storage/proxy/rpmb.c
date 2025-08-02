@@ -39,6 +39,10 @@
 #include "rpmb.h"
 #include "storage.h"
 
+/* sg_io_hdr_t host_status codes */
+#define DID_OK 0
+#define DID_REQUEUE 0x0d
+
 #define MMC_READ_MULTIPLE_BLOCK 18
 #define MMC_WRITE_MULTIPLE_BLOCK 25
 #define MMC_RELIABLE_WRITE_FLAG (1 << 31)
@@ -310,6 +314,11 @@ static enum scsi_result check_sg_io_hdr(const sg_io_hdr_t* io_hdrp) {
             ALOGE("SG_IO failed with masked_status: %hhu, host_status: %hu, driver_status: %hu\n",
                   io_hdrp->masked_status, io_hdrp->host_status, io_hdrp->driver_status);
             return SCSI_RES_ERR;
+    }
+
+    if (io_hdrp->host_status == DID_REQUEUE && io_hdrp->driver_status == 0) {
+        ALOGW("SG_IO failed with host_status: DID_REQUEUE, retrying\n");
+        return SCSI_RES_RETRY;
     }
 
     if (io_hdrp->host_status != 0) {
