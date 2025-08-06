@@ -121,6 +121,21 @@ pub struct RecordArgs {
     )]
     pub tracing_instance: Option<String>,
 
+    /// specifies a list of mount points prefixes to be excluded from the record.
+    ///
+    /// Files with a path prefixed by one of the mount points in this list will be
+    /// ignored during the recording process. By default, no paths are excluded.
+    #[argh(option)]
+    pub exclude_mount_prefix: Vec<PathBuf>,
+
+    /// specifies a list of mount points prefixes to be included.
+    ///
+    /// When this option is provided, the recording will be limited to only the files
+    /// with path prefixed by one of these mount points. If omitted, all files are
+    /// recorded by default.
+    #[argh(option)]
+    pub include_mount_prefix: Vec<PathBuf>,
+
     #[cfg(target_os = "android")]
     /// store build_finger_print to tie the pack format
     #[argh(option, default = "default_build_finger_print_path()")]
