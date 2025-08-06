@@ -222,16 +222,18 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
     const char* e2fsck_argv[] = {E2FSCK_BIN, "-p", blk_device.c_str()};
     // Full repair.
     const char* e2fsck_forced_argv[] = {E2FSCK_BIN, "-f", "-y", blk_device.c_str()};
-    // e2fsck exit codes taken from the man page
-    constexpr int E2FSCK_EXIT_CODE_NO_ERROR = 0;
-    constexpr int E2FSCK_EXIT_CODE_ERROR_CORRECTED = 1;
-    constexpr int E2FSCK_EXIT_CODE_ERROR_CORRECTED_REBOOT_REQUIRED = 2;
-    constexpr int E2FSCK_EXIT_CODE_ERROR_UNCORRECTED = 4;
-    // Exit codes below can never happen in our case, but listed anyway for completeness
-    constexpr int E2FSCK_EXIT_CODE_OPERATIONAL_ERROR = 8;
-    constexpr int E2FSCK_EXIT_CODE_SYNTAX_ERROR = 16;
-    constexpr int E2FSCK_EXIT_CODE_CANCELED_BY_USER = 32;
-    constexpr int E2FSCK_EXIT_CODE_SHARED_LIB_ERROR = 64;
+    enum class E2fsckExitCode : int {
+        // e2fsck exit codes taken from the man page
+        NO_ERROR = 0,
+        ERROR_CORRECTED = 1,
+        ERROR_CORRECTED_REBOOT_REQUIRED = 2,
+        ERROR_UNCORRECTED = 4,
+        // Exit codes below can never happen in our case, but listed anyway for completeness
+        OPERATIONAL_ERROR = 8,
+        SYNTAX_ERROR = 16,
+        CANCELED_BY_USER = 32,
+        SHARED_LIB_ERROR = 64,
+    };
 
     if (*fs_stat & FS_STAT_INVALID_MAGIC) {  // will fail, so do not try
         return;
@@ -293,8 +295,9 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
                 *fs_stat |= FS_STAT_FSCK_FAILED;
             } else if (status != 0) {
                 LINFO << "e2fsck returned status 0x" << std::hex << status;
-                bool corrected = (status & E2FSCK_EXIT_CODE_ERROR_CORRECTED) != 0;
-                bool uncorrected = (status & E2FSCK_EXIT_CODE_ERROR_UNCORRECTED) != 0;
+                bool corrected = (status & static_cast<int>(E2fsckExitCode::ERROR_CORRECTED)) != 0;
+                bool uncorrected =
+                        (status & static_cast<int>(E2fsckExitCode::ERROR_UNCORRECTED)) != 0;
                 if (corrected && !uncorrected) {
                     // TODO: nobody seems to be checking this bit??
                     *fs_stat |= FS_STAT_FSCK_FS_FIXED;
