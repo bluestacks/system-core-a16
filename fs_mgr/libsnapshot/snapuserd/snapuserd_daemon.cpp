@@ -147,9 +147,23 @@ bool Daemon::StartServerForUserspaceSnapshots(int arg_start, int argc, char** ar
 
     MaskAllSignalsExceptIntAndTerm();
 
-    if (!FLAGS_ublk) {
-        // Check if we should use Ublk for snapshots
-        FLAGS_ublk = IsUblkEnabled();
+    gflags::CommandLineFlagInfo ublk_flag_info;
+    bool ublk_flag_is_default = true;
+    if (gflags::GetCommandLineFlagInfo("ublk", &ublk_flag_info)) {
+        ublk_flag_is_default = ublk_flag_info.is_default;
+    }
+
+    if (ublk_flag_is_default) {
+        // If -ublk or -noublk was not explicitly passed on the command-line,
+        // fall back to auto-detection. Otherwise, the flag passed by the
+        // caller (libsnapshot) is respected.
+        // Check if test wants to force dm_user mode.
+        if (android::base::GetProperty("snapuserd.test.force_dm_user", "") == "true") {
+            FLAGS_ublk = false;
+        } else {
+            // Otherwise, perform normal auto-detection.
+            FLAGS_ublk = IsUblkEnabled();
+        }
     }
     // Set block_server_opener_
     user_server_.Initialize(FLAGS_ublk);

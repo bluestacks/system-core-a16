@@ -2108,6 +2108,8 @@ bool SnapshotManager::PerformInitTransition(InitTransition transition,
         }
         if (UpdateUsesUblk(lock.get())) {
             snapuserd_argv->emplace_back("-ublk");
+        } else {
+            snapuserd_argv->emplace_back("-noublk");
         }
         uint cow_op_merge_size = GetUpdateCowOpMergeSize(lock.get());
         if (cow_op_merge_size != 0) {
