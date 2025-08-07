@@ -1508,8 +1508,8 @@ auto SnapshotManager::CheckMergeState(const std::function<bool()>& before_cancel
     return result;
 }
 
-auto SnapshotManager::CheckMergeState(LockedFile* lock,
-                                      const std::function<bool()>& before_cancel) -> MergeResult {
+auto SnapshotManager::CheckMergeState(LockedFile* lock, const std::function<bool()>& before_cancel)
+        -> MergeResult {
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
     switch (update_status.state()) {
         case UpdateState::None:
@@ -2553,13 +2553,13 @@ bool SnapshotManager::IsSnapshotWithoutSlotSwitch() {
     return (access(GetBootSnapshotsWithoutSlotSwitchPath().c_str(), F_OK) == 0);
 }
 
-bool SnapshotManager::UpdateUsesCompression() {
+bool SnapshotManager::UpdateUsesSnapuserd() {
     auto lock = LockShared();
     if (!lock) return false;
-    return UpdateUsesCompression(lock.get());
+    return UpdateUsesSnapuserd(lock.get());
 }
 
-bool SnapshotManager::UpdateUsesCompression(LockedFile* lock) {
+bool SnapshotManager::UpdateUsesSnapuserd(LockedFile* lock) {
     // This returns true even if compression is "none", since update_engine is
     // really just trying to see if snapuserd is in use.
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
@@ -3262,7 +3262,7 @@ bool SnapshotManager::UnmapCowDevices(LockedFile* lock, const std::string& name)
     CHECK(lock);
     if (!EnsureImageManager()) return false;
 
-    if (UpdateUsesCompression(lock) && !UpdateUsesUserSnapshots(lock)) {
+    if (UpdateUsesSnapuserd(lock) && !UpdateUsesUserSnapshots(lock)) {
         auto dm_user_name = GetSnapshotCowName(name, GetSnapshotDriver(lock));
         if (!UnmapDmUserDevice(dm_user_name)) {
             return false;
@@ -3446,8 +3446,8 @@ bool SnapshotManager::UnmapAllSnapshots(LockedFile* lock) {
     return true;
 }
 
-auto SnapshotManager::OpenFile(const std::string& file,
-                               int lock_flags) -> std::unique_ptr<LockedFile> {
+auto SnapshotManager::OpenFile(const std::string& file, int lock_flags)
+        -> std::unique_ptr<LockedFile> {
     const auto start = std::chrono::system_clock::now();
     unique_fd fd(open(file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     if (fd < 0) {
