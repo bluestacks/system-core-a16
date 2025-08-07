@@ -3853,8 +3853,6 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
     std::string vabc_disable_reason;
     if (!dap_metadata.vabc_enabled()) {
         vabc_disable_reason = "not enabled metadata";
-    } else if (device_->IsRecovery()) {
-        vabc_disable_reason = "recovery";
     } else if (!KernelSupportsCompressedSnapshots()) {
         vabc_disable_reason = "kernel missing userspace block device support";
     }
@@ -3893,7 +3891,8 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
 
     const bool using_snapuserd = userspace_snapshots || legacy_compression;
     if (!using_snapuserd) {
-        LOG(INFO) << "Using legacy Virtual A/B (dm-snapshot)";
+        LOG(ERROR) << "Using legacy Virtual A/B (dm-snapshot)";
+        return Return::Error();
     }
 
     std::string compression_algorithm;
