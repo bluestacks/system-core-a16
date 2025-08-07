@@ -43,8 +43,7 @@ impl SerializedChannel for TipcChannel {
                 binder::ExceptionCode::TRANSACTION_FAILED,
                 Some(
                     &CString::new(format!(
-                        "Failed to send the request via tipc channel because of {:?}",
-                        e
+                        "Failed to send the request via tipc channel because of {e:?}"
                     ))
                     .unwrap(),
                 ),
@@ -59,8 +58,7 @@ impl SerializedChannel for TipcChannel {
                     binder::ExceptionCode::TRANSACTION_FAILED,
                     Some(
                         &CString::new(format!(
-                            "Failed to receive the response via tipc channel because of {:?}",
-                            e
+                            "Failed to receive the response via tipc channel because of {e:?}"
                         ))
                         .unwrap(),
                     ),
@@ -83,7 +81,7 @@ struct Args {
 
 fn main() {
     if let Err(HalServiceError(e)) = inner_main() {
-        panic!("HAL service failed: {:?}", e);
+        panic!("HAL service failed: {e:?}");
     }
 }
 
@@ -98,7 +96,7 @@ fn inner_main() -> Result<(), HalServiceError> {
     );
     // Redirect panic messages to logcat.
     panic::set_hook(Box::new(|panic_info| {
-        error!("{}", panic_info);
+        error!("{panic_info}");
     }));
 
     if cfg!(feature = "nonsecure") {
@@ -129,7 +127,7 @@ fn inner_main() -> Result<(), HalServiceError> {
 
     // Send the HAL service information to the TA
     send_hal_info(tipc_channel.lock().unwrap().deref_mut())
-        .map_err(|e| format!("Failed to populate HAL info: {:?}", e))?;
+        .map_err(|e| format!("Failed to populate HAL info: {e:?}"))?;
 
     info!("Joining thread pool now.");
     binder::ProcessState::join_thread_pool();

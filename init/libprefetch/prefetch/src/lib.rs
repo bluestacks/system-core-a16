@@ -74,7 +74,7 @@ pub fn record(args: &RecordArgs) -> Result<(), Error> {
 
     let thd = thread::spawn(move || {
         if !duration.is_zero() {
-            info!("Record start - waiting for duration: {:?}", duration);
+            info!("Record start - waiting for duration: {duration:?}");
             thread::sleep(duration);
         } else {
             #[cfg(target_os = "android")]

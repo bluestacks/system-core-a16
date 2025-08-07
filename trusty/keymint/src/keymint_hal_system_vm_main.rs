@@ -67,7 +67,7 @@ impl From<CommServiceChannel> for HalChannel {
 
 fn main() {
     if let Err(e) = inner_main() {
-        panic!("HAL service failed: {:?}", e);
+        panic!("HAL service failed: {e:?}");
     }
 }
 
@@ -117,6 +117,6 @@ fn setup_logging_and_panic_hook() {
     );
     // In case of a panic, log it before the process terminates.
     panic::set_hook(Box::new(|panic_info| {
-        error!("PANIC: {}", panic_info);
+        error!("PANIC: {panic_info}");
     }));
 }
