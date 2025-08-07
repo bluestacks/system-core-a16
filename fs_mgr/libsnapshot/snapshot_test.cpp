@@ -1161,14 +1161,12 @@ class SnapshotUpdateTest : public SnapshotTest {
         MountMetadata();
         for (const auto& suffix : {"_a", "_b"}) {
             test_device->set_slot_suffix(suffix);
-
             // Cheat our way out of merge failed states.
             if (sm->ProcessUpdateState() == UpdateState::MergeFailed) {
                 ASSERT_TRUE(AcquireLock());
                 ASSERT_TRUE(sm->WriteUpdateState(lock_.get(), UpdateState::None));
                 lock_ = {};
             }
-
             EXPECT_TRUE(sm->CancelUpdate()) << suffix;
         }
         EXPECT_TRUE(UnmapAll());
@@ -2954,6 +2952,85 @@ TEST_F(SnapshotTest, FlagCheck) {
                 snapuserd_argv.end());
     ASSERT_TRUE(std::find(snapuserd_argv.begin(), snapuserd_argv.end(), "-cow_op_merge_size=16") !=
                 snapuserd_argv.end());
+}
+
+TEST_F(SnapshotUpdateTest, MergeRespectsSourceUblkDisabled) {
+    // This test simulates an OTA from a build that does not have ublk support,
+    // to a build that does. The merge should happen over dm-user, not ublk.
+    if (!snapuserd_required_) {
+        GTEST_SKIP() << "Test is for userspace snapshots only";
+    }
+    if (android::snapshot::IsUblkEnabled()) {
+        GTEST_SKIP() << "Test is for non ublk supporting builds only";
+    }
+    // Source build does not have ublk.
+    auto previous_ublk_mode = android::base::GetProperty("snapuserd.test.ublk.force_mode", "");
+    auto previous_dm_user_mode = android::base::GetProperty("snapuserd.test.force_dm_user", "");
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", "disabled"));
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.force_dm_user", "true"));
+
+    constexpr uint64_t partition_size = 3788_KiB;
+    SetSize(sys_, partition_size);
+    SetSize(vnd_, partition_size);
+    SetSize(prd_, 18_MiB);
+    vnd_->set_estimate_cow_size(30_MiB);
+    prd_->set_estimate_cow_size(30_MiB);
+    AddOperationForPartitions();
+
+    ASSERT_TRUE(sm->BeginUpdate());
+    ASSERT_TRUE(sm->CreateUpdateSnapshots(manifest_));
+
+    // Check that ublk was not used for the snapshots.
+    {
+        ASSERT_TRUE(AcquireLock());
+        auto local_lock = std::move(lock_);
+        auto status = sm->ReadSnapshotUpdateStatus(local_lock.get());
+        ASSERT_FALSE(sm->UpdateUsesUblk());
+    }
+
+    ASSERT_TRUE(WriteSnapshots());
+    ASSERT_TRUE(sm->FinishedSnapshotWrites(false));
+    ASSERT_TRUE(UnmapAll());
+
+    // Target build has ublk enabled.
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", "enabled"));
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.force_dm_user", "true"));
+
+    // After reboot, init does first stage mount.
+    auto init = NewManagerForFirstStageMount("_b");
+    ASSERT_NE(init, nullptr);
+    ASSERT_TRUE(init->NeedSnapshotsInFirstStageMount());
+    ASSERT_TRUE(init->CreateLogicalAndSnapshotPartitions("super", snapshot_timeout_));
+
+    // Check that the target partitions have the same content.
+    for (const auto& name : {"sys_b", "vnd_b", "prd_b"}) {
+        ASSERT_TRUE(IsPartitionUnchanged(name));
+    }
+
+    // Initiate the merge.
+    ASSERT_TRUE(init->InitiateMerge());
+
+    // The device should have been switched to a dm-user target, because the
+    // source did not have ublk enabled.
+    DeviceMapper::TargetInfo target;
+    ASSERT_TRUE(init->IsSnapshotDevice("sys_b", &target));
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+    ASSERT_TRUE(init->IsSnapshotDevice("vnd_b", &target));
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+    ASSERT_TRUE(init->IsSnapshotDevice("prd_b", &target));
+    ASSERT_EQ(DeviceMapper::GetTargetType(target.spec), "user");
+
+    ASSERT_EQ(UpdateState::MergeCompleted, init->ProcessUpdateState());
+
+    // Check that the target partitions have the same content after the merge.
+    for (const auto& name : {"sys_b", "vnd_b", "prd_b"}) {
+        ASSERT_TRUE(IsPartitionUnchanged(name))
+                << "Content of " << name << " changes after the merge";
+    }
+
+    // Restore original properties
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.ublk.force_mode", previous_ublk_mode));
+    ASSERT_TRUE(android::base::SetProperty("snapuserd.test.force_dm_user", previous_dm_user_mode));
 }
 
 class FlashAfterUpdateTest : public SnapshotUpdateTest,
