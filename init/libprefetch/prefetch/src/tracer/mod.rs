@@ -229,7 +229,7 @@ pub(crate) trait TraceSubsystem {
 /// Returns page size in bytes
 pub(crate) fn page_size() -> Result<usize, Error> {
     Ok(nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
-        .map_err(|e| Error::Custom { error: format!("failed to query page size: {}", e) })?
+        .map_err(|e| Error::Custom { error: format!("failed to query page size: {e}") })?
         .ok_or(Error::Custom { error: "failed to query page size: None returned".to_string() })?
         as usize)
 }
@@ -338,7 +338,7 @@ impl Tracer {
         let mut buf = String::new();
         self.trace_file
             .read_to_string(&mut buf)
-            .map_err(|e| Error::Read { error: format!("failed to read trace file: {}", e) })?;
+            .map_err(|e| Error::Read { error: format!("failed to read trace file: {e}") })?;
 
         for line in buf.lines() {
             let trimmed = line.trim_end();
