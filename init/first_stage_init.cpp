@@ -357,8 +357,6 @@ int FirstStageMain(int argc, char** argv) {
 #define MAKE_STR(x) __STRING(x)
     CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
 #undef MAKE_STR
-    // Don't expose the raw commandline to unprivileged processes.
-    CHECKCALL(chmod("/proc/cmdline", 0440));
     std::string cmdline;
     android::base::ReadFileToString("/proc/cmdline", &cmdline);
     // Don't expose the raw bootconfig to unprivileged processes.
