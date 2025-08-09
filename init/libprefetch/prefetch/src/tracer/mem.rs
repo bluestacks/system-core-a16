@@ -96,10 +96,10 @@ fn makedev(major: MajorMinorType, minor: MajorMinorType) -> DeviceNumber {
 fn build_device_number(major: &str, minor: &str) -> Result<DeviceNumber, Error> {
     Ok(makedev(
         major.parse::<MajorMinorType>().map_err(|e| Error::Custom {
-            error: format!("Failed to parse major number from {} with {}", major, e),
+            error: format!("Failed to parse major number from {major} with {e}"),
         })?,
         minor.parse::<MajorMinorType>().map_err(|e| Error::Custom {
-            error: format!("Failed to parse major number from {} with {}", major, e),
+            error: format!("Failed to parse major number from {major} with {e}"),
         })?,
     ))
 }
@@ -107,10 +107,10 @@ fn build_device_number(major: &str, minor: &str) -> Result<DeviceNumber, Error> 
 // Returns timestamp in nanoseconds
 fn build_timestamp(seconds: &str, microseconds: &str) -> Result<u64, Error> {
     let seconds = seconds.parse::<u64>().map_err(|e| Error::Custom {
-        error: format!("Failed to parse seconds from {} with {}", seconds, e),
+        error: format!("Failed to parse seconds from {seconds} with {e}"),
     })?;
     let microseconds = microseconds.parse::<u64>().map_err(|e| Error::Custom {
-        error: format!("Failed to parse microseconds from {} with {}", seconds, e),
+        error: format!("Failed to parse microseconds from {seconds} with {e}"),
     })?;
     Ok((seconds * 1_000_000_000) + (microseconds * 1_000))
 }
@@ -180,7 +180,7 @@ impl MountInfo {
     // Parses file at `path` to build `Self`.`
     fn create(path: &str) -> Result<Self, Error> {
         let buf = read_to_string(path)
-            .map_err(|e| Error::Read { error: format!("Reading {} failed with: {}", path, e) })?;
+            .map_err(|e| Error::Read { error: format!("Reading {path} failed with: {e}") })?;
         Self::with_buf(&buf)
     }
 
@@ -223,14 +223,13 @@ impl MountInfo {
         }
 
         let mount_point = &caps["mount_point"];
-        let mnt_pnt_with_slash = format!("{}/", mount_point);
+        let mnt_pnt_with_slash = format!("{mount_point}/");
         let device_number = build_device_number(&caps["major"], &caps["minor"])?;
         let fs_type = &caps["fs_type"];
 
         if excluded_filesystem_types.contains(fs_type) {
             info!(
-                "excluding fs type: {} for {} mount-point {} slash {}",
-                fs_type, line, mount_point, mnt_pnt_with_slash
+                "excluding fs type: {fs_type} for {line} mount-point {mount_point} slash {mnt_pnt_with_slash}"
             );
             return Ok(Some(DeviceState::Exclude(device_number)));
         }
@@ -238,8 +237,7 @@ impl MountInfo {
         for excluded in EXCLUDE_PATHS {
             if mnt_pnt_with_slash.starts_with(excluded) {
                 info!(
-                    "exclude-paths fs type: {} for {} mount-point {} slash {}",
-                    fs_type, line, mount_point, mnt_pnt_with_slash
+                    "exclude-paths fs type: {fs_type} for {line} mount-point {mount_point} slash {mnt_pnt_with_slash}"
                 );
                 return Ok(Some(DeviceState::Exclude(device_number)));
             }
@@ -262,7 +260,7 @@ impl MountInfo {
             r"\s+(?P<device_path>\S+)"
         ))
         .map_err(|e| Error::Custom {
-            error: format!("create regex for parsing mountinfo failed with: {}", e),
+            error: format!("create regex for parsing mountinfo failed with: {e}"),
         })
     }
 
@@ -307,10 +305,10 @@ impl TraceLineInfo {
         Ok(Some(TraceLineInfo {
             device: build_device_number(major, minor)?,
             inode: u64::from_str_radix(ino, 16).map_err(|e| Error::Custom {
-                error: format!("failed parsing inode: {} : {}", ino, e),
+                error: format!("failed parsing inode: {ino} : {e}"),
             })?,
             offset: offset.parse::<u64>().map_err(|e| Error::Custom {
-                error: format!("failed parsing offset: {} : {}", offset, e),
+                error: format!("failed parsing offset: {offset} : {e}"),
             })?,
             timestamp,
             order,
@@ -347,9 +345,7 @@ impl TraceLineInfo {
             r"\s+ofs=(?P<offset>[0-9]+)",
             r"(?:\s+order=(?P<order>\S+))?"
         ))
-        .map_err(|e| Error::Custom {
-            error: format!("create regex for tracing failed with: {}", e),
-        })
+        .map_err(|e| Error::Custom { error: format!("create regex for tracing failed with: {e}") })
     }
 }
 
@@ -422,11 +418,11 @@ impl MemTraceSubsystem {
 
     pub fn create_with_configs(tracer_configs: TracerConfigs) -> Result<Self, Error> {
         static INITIAL_RECORDS_CAPACITY: usize = 100_000;
-        debug!("TracerConfig: {:#?}", tracer_configs);
+        debug!("TracerConfig: {tracer_configs:#?}");
 
         let regex = TraceLineInfo::get_trace_line_regex()?;
         let mount_info = MountInfo::create(tracer_configs.mountinfo_path.as_ref().unwrap())?;
-        debug!("mountinfo: {:#?}", mount_info);
+        debug!("mountinfo: {mount_info:#?}");
 
         Ok(Self {
             device_inode_map: HashMap::new(),
@@ -579,7 +575,7 @@ impl TraceSubsystem for MemTraceSubsystem {
 
             if inode_map.is_empty() {
                 return Err(Error::Custom {
-                    error: format!("Unexpected empty records for {:?}", root_path),
+                    error: format!("Unexpected empty records for {root_path:?}"),
                 });
             }
 

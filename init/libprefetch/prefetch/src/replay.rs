@@ -47,7 +47,7 @@ struct ScopedLog<T: Display + Sized> {
 
 fn scoped_log<T: Display + Sized>(ctx: usize, msg: T) -> ScopedLog<T> {
     let thd_id = ctx;
-    debug!("{} {} start", thd_id, msg);
+    debug!("{thd_id} {msg} start");
     ScopedLog { msg, thd_id }
 }
 
@@ -63,7 +63,7 @@ fn readahead(
     record: &Record,
     buffer: &mut [u8; READ_SZ],
 ) -> Result<(), Error> {
-    debug!("readahead {:?}", record);
+    debug!("readahead {record:?}");
     let _dbg = scoped_log(id, "readahead");
 
     let mut current_offset: off64_t = record
@@ -145,7 +145,7 @@ fn worker_internal(
                         } else {
                             match e {
                                 Error::SkipPrefetch { path } => {
-                                    debug!("Skipping file during replay: {}", path);
+                                    debug!("Skipping file during replay: {path}");
                                 }
                                 _ => error!(
                                     "Failed to open file id: {} with {}",
@@ -209,7 +209,7 @@ fn worker(
         buffer,
     );
     if result.is_err() {
-        error!("worker failed with {:?}", result);
+        error!("worker failed with {result:?}");
         let mut state = state.lock().unwrap();
         if state.result.is_ok() {
             state.result = result;

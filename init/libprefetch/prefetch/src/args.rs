@@ -101,7 +101,7 @@ pub(crate) fn ensure_path_exists(p: &Path) -> Result<(), Error> {
 pub fn args_from_env() -> MainArgs {
     let mut args = args_internal::args_from_env();
     if let Err(e) = verify_and_fix(&mut args) {
-        error!("failed to verify args: {}", e);
+        error!("failed to verify args: {e}");
         exit(1);
     }
     args
