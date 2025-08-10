@@ -183,7 +183,7 @@ noinline void sigsegv_write() {
 
 noinline void sigsegv_read() {
   int* a = reinterpret_cast<int*>(0xdeadbeef);
-  int value = *a;
+  [[maybe_unused]] int value = *a;
 }
 
 noinline void fprintf_null() {
