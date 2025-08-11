@@ -109,11 +109,15 @@ class TestAllocator : public Allocator {
         ON_CALL(*this, allocate(_, _)).WillByDefault([](size_t size, size_t) {
             return malloc(size);
         });
+        ON_CALL(*this, reallocate(_, _)).WillByDefault([](void* ptr, size_t size) {
+            return realloc(ptr, size);
+        });
         ON_CALL(*this, deallocate(_)).WillByDefault([](void* ptr) { free(ptr); });
         ON_CALL(*this, abort()).WillByDefault([]() { std::abort(); });
     }
 
     MOCK_METHOD(void*, allocate, (size_t size, size_t alignment), (override));
+    MOCK_METHOD(void*, reallocate, (void* ptr, size_t size), (override));
     MOCK_METHOD(void, deallocate, (void* ptr), (override));
     MOCK_METHOD(void, abort, (), (override));
 };

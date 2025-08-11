@@ -40,6 +40,10 @@ class Allocator {
     // 'ptr' must have been returned by allocate().
     virtual void deallocate(void* ptr) = 0;
 
+    // Reallocates a previously allocated block of memory.
+    // 'ptr' must have been returned by allocate().
+    virtual void* reallocate(void* ptr, size_t size) = 0;
+
     // Aborts the process. Called when allocation fails on a throwing allocation.
     virtual void abort() = 0;
 };
@@ -55,10 +59,9 @@ class DefaultAllocator : public Allocator {
         return sInstance;
     }
 
-    void* allocate(size_t size, size_t alignment) override {
-        return ::operator new(size, static_cast<std::align_val_t>(alignment), std::nothrow);
-    }
-    void deallocate(void* ptr) override { ::operator delete(ptr); }
+    void* allocate(size_t size, size_t /* alignment */) override { return malloc(size); }
+    void* reallocate(void* ptr, size_t size) override { return realloc(ptr, size); }
+    void deallocate(void* ptr) override { free(ptr); }
     void abort() override { std::abort(); }
 };
 
@@ -147,14 +150,22 @@ class AllocatorTracker {
        }())
 
 // Creates a new buffer of the specified size with the global allocator if
-// available, or global operator new otherwise. This macro evaluates to a void*
-// pointer.
-#define ANDROID_NEW_BUFFER_NOTHROW(size)                                                        \
+// available, or malloc otherwise. This macro evaluates to a void* pointer.
+#define ANDROID_MALLOC(size)                                                                    \
     (::android::AllocatorTracker::hasAllocator() ? [&]() -> void* {                             \
         ::android::Allocator& allocator = ::android::AllocatorTracker::getAllocatorOrDefault(); \
         return allocator.allocate(size, alignof(void*));                                        \
     }()                                                                                         \
-                                                 : ::operator new(size, std::nothrow))
+                                                 : malloc(size))
+
+// Reallocates the provided pointer using the global allocator if available, or
+// global realloc otherwise. This macro evaluates to a void* pointer.
+#define ANDROID_REALLOC(ptr, size)                                                              \
+    (::android::AllocatorTracker::hasAllocator() ? [&]() -> void* {                             \
+        ::android::Allocator& allocator = ::android::AllocatorTracker::getAllocatorOrDefault(); \
+        return allocator.reallocate(ptr, size);                                                 \
+    }()                                                                                         \
+                                                 : realloc(ptr, size))
 
 // Deletes the provided pointer using the global allocator if available, or
 // global delete otherwise. T must be the type of ptr, and will be the
@@ -176,15 +187,15 @@ class AllocatorTracker {
     } while (0)
 
 // Deletes the provided buffer using the global allocator if available, or
-// global delete otherwise. This macro evaluates to void.
-#define ANDROID_DELETE_BUFFER(ptr)                                               \
+// free otherwise. This macro evaluates to void.
+#define ANDROID_FREE(ptr)                                                        \
     do {                                                                         \
         if (ptr != nullptr) {                                                    \
             if (::android::AllocatorTracker::hasAllocator()) {                   \
                 ::android::AllocatorTracker::getAllocatorOrDefault().deallocate( \
                         const_cast<void*>(static_cast<const void*>(ptr)));       \
             } else {                                                             \
-                ::operator delete(ptr);                                          \
+                free(ptr);                                                       \
             }                                                                    \
         }                                                                        \
     } while (0)
@@ -200,11 +211,12 @@ class AllocatorTracker {
         static_assert(!std::is_array<T>::value, "Array types are not supported."); \
         return new (std::nothrow) T(__VA_ARGS__);                                  \
     }()
-#define ANDROID_NEW_BUFFER_NOTHROW(size) ::operator new(size, std::nothrow)
+#define ANDROID_MALLOC(size) malloc(size)
+#define ANDROID_REALLOC(ptr, size) realloc(ptr, size)
 #define ANDROID_DELETE(T, ptr)                                                     \
     do {                                                                           \
         static_assert(!std::is_array<T>::value, "Array types are not supported."); \
         delete ptr;                                                                \
     } while (0)
-#define ANDROID_DELETE_BUFFER(ptr) ::operator delete(ptr)
+#define ANDROID_FREE(ptr) free(ptr)
 #endif  // ANDROID_UTILS_CUSTOM_ALLOCATOR
