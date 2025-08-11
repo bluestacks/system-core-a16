@@ -383,6 +383,75 @@ static bool is_backing_storage_mapped(const char* source) {
     return false;
 }
 
+enum symlink_status {
+    SYMLINK_MISSING,
+    SYMLINK_VALID,
+    SYMLINK_MISMATCH,
+    SYMLINK_CHECK_ERROR,
+};
+
+/*
+ * Check if symlink already exists and points to mapping_entry->backing_storage.
+ */
+static enum symlink_status check_symlink(const char* full_path,
+                                         struct storage_mapping_node* mapping_entry) {
+    struct stat sb = {0};
+    enum symlink_status symlink_status;
+
+    if (lstat(full_path, &sb) != 0) {
+        if (errno == ENOENT) {
+            ALOGI("%s: Symlink from %s to %s does not already exist\n", __func__, full_path,
+                  mapping_entry->backing_storage);
+            return SYMLINK_MISSING;
+        }
+        ALOGE("%s: failed to lstat %s, %s\n", __func__, full_path, strerror(errno));
+        if (errno == EACCES) {
+            /* Trigger fallback if selinux prevents checking the link */
+            return SYMLINK_MISMATCH;
+        }
+        return SYMLINK_CHECK_ERROR;
+    }
+    if ((sb.st_mode & S_IFMT) != S_IFLNK) {
+        ALOGE("%s: File at %s is not a symlink (to %s)\n", __func__, full_path,
+              mapping_entry->backing_storage);
+        return SYMLINK_MISMATCH;
+    }
+
+    /* The expected readlink size should match the size from lstat */
+    size_t expected_read_size = sb.st_size;
+
+    /* Request one extra char to detect longer than expected links */
+    size_t max_read_size = expected_read_size + 1;
+
+    /* Allocate max_read_size plus null terminator */
+    char* buf = calloc(max_read_size + 1, 1);
+    if (!buf) {
+        ALOGE("%s Failed to allocate memory to check symlink at %s\n", __func__, full_path);
+        errno = ENOMEM;
+        return SYMLINK_CHECK_ERROR;
+    }
+
+    ssize_t read_size = readlink(full_path, buf, max_read_size);
+    if (!strcmp(buf, mapping_entry->backing_storage)) {
+        ALOGI("%s: Found valid symlink from %s to %s\n", __func__, full_path,
+              mapping_entry->backing_storage);
+        symlink_status = SYMLINK_VALID;
+    } else if (read_size < 0) {
+        ALOGE("%s: Failed to read link at %s, %s\n", __func__, full_path, strerror(errno));
+        symlink_status = SYMLINK_CHECK_ERROR;
+    } else {
+        if (read_size != expected_read_size) {
+            ALOGW("%s: readlink size, %zd, does not match stat size, %zu\n", __func__, read_size,
+                  expected_read_size);
+        }
+        ALOGE("%s: Symlink at %s points to %s instead of %s\n", __func__, full_path, buf,
+              mapping_entry->backing_storage);
+        symlink_status = SYMLINK_MISMATCH;
+    }
+    free(buf);
+    return symlink_status;
+}
+
 /* Attempts to open a backed file, if mapped, without creating the symlink. Symlink will be created
  * later on the first write.  This allows us to continue reporting zero read sizes until the first
  * write. */
@@ -407,30 +476,46 @@ static int open_possibly_mapped_file(const char* short_path, const char* full_pa
         return -1;
     }
 
-    open_flags &= ~(O_CREAT | O_EXCL);
-
-    /*
-     * After checking root path and clearing O_CREAT, try to open symlink first. We need to try the
-     * symlink after checking the root path, not before, in case the root path becomes available
-     * while we are running.
-     */
-    int fd = TEMP_FAILURE_RETRY(open(full_path, open_flags, S_IRUSR | S_IWUSR));
-    if (fd >= 0) {
-        ALOGI("%s: Opened %s instead of %s\n", __func__, full_path, mapping_entry->backing_storage);
-        return fd;
-    }
-
     /* Try and open mapping file */
+    open_flags &= ~(O_CREAT | O_EXCL);
     ALOGI("%s Attempting to open mapped file: %s\n", __func__, mapping_entry->backing_storage);
-    fd = TEMP_FAILURE_RETRY(open(mapping_entry->backing_storage, open_flags, S_IRUSR | S_IWUSR));
+    int fd =
+            TEMP_FAILURE_RETRY(open(mapping_entry->backing_storage, open_flags, S_IRUSR | S_IWUSR));
     if (fd < 0) {
         ALOGE("%s Failed to open mapping file: %s\n", __func__, mapping_entry->backing_storage);
         return -1;
     }
 
-    /* Let caller know which entry we used for opening */
-    *mapping_entry_need_symlink = mapping_entry;
-    return fd;
+    enum symlink_status symlink_status = check_symlink(full_path, mapping_entry);
+    switch (symlink_status) {
+        case SYMLINK_MISSING:
+            /* Let caller know which entry we used for opening so it can create the symlink */
+            *mapping_entry_need_symlink = mapping_entry;
+            [[fallthrough]];
+        case SYMLINK_VALID:
+            return fd;
+        case SYMLINK_MISMATCH:
+            /*
+             * If there is anything other than a symlink to mapping_entry->backing_storage at
+             * full_path then fall back to open that file instead. This matches the existing
+             * behavior for this case, which allows adding mapping entries in an update to an
+             * existing device that will only take effect once the original file is gone.
+             *
+             * Returning an error for this case instead might be preferable for devices where this
+             * fallback is not needed though.
+             */
+            close(fd);
+            ALOGI("%s Attempting to open original file: %s\n", __func__, full_path);
+            fd = TEMP_FAILURE_RETRY(open(full_path, open_flags, S_IRUSR | S_IWUSR));
+            if (fd < 0) {
+                ALOGE("%s Failed to open original file: %s\n", __func__, full_path);
+                return -1;
+            }
+            return fd;
+        case SYMLINK_CHECK_ERROR:
+            close(fd);
+            return -1;
+    }
 }
 
 int storage_file_open(struct storage_msg* msg, const void* r, size_t req_len,
