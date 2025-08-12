@@ -1335,7 +1335,7 @@ void RecordBootComplete() {
   BootEventRecordStore::BootEventRecord record;
 
   auto uptime_ns = GetUptime();
-  auto uptime_s = std::chrono::duration_cast<std::chrono::seconds>(uptime_ns);
+  auto uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(uptime_ns);
   time_t current_time_utc = time(nullptr);
   time_t time_since_last_boot = 0;
 
@@ -1356,9 +1356,8 @@ void RecordBootComplete() {
     return;
   }
 
-  // Note: we are recording seconds here even though the field in statsd atom
-  // specifies milliseconds.
-  boot_event_store.AddBootCompleteEvents(std::string(boot_complete_prefix), uptime_s.count());
+  // Record the total time from device startup to boot complete.
+  boot_event_store.AddBootEventWithValue(std::string(boot_complete_prefix), uptime_ms.count());
 
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init");
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init.first_stage");
@@ -1369,7 +1368,6 @@ void RecordBootComplete() {
   const int32_t bootloader_boot_duration = GetBootloaderTime(bootloader_timings, {FIRMWARE_SPLASH});
   RecordBootloaderTimings(&boot_event_store, bootloader_timings, bootloader_boot_duration);
 
-  auto uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(uptime_ns);
   auto absolute_boot_time = GetAbsoluteBootTime(bootloader_timings, uptime_ms);
   RecordAbsoluteBootTime(&boot_event_store, absolute_boot_time);
 
