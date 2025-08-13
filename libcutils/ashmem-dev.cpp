@@ -250,8 +250,8 @@ int ashmem_create_region(const char* name, size_t size) {
 
     android::base::unique_fd fd(__ashmem_open());
     if (!fd.ok() ||
-        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_NAME, name) < 0) ||
-        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_SIZE, size) < 0)) {
+        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_NAME, name)) < 0 ||
+        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_SIZE, size)) < 0) {
         return -1;
     }
     return fd.release();

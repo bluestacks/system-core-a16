@@ -1159,29 +1159,27 @@ std::string BootReasonStrToReason(const std::string& boot_reason) {
 // bookkeeping required to track when a system update has occurred by storing
 // the UTC timestamp of the system build date and comparing against the current
 // system build date.
-std::string CalculateBootCompletePrefix() {
+std::string_view CalculateBootCompletePrefix() {
   static const std::string kBuildDateKey = "build_date";
-  std::string boot_complete_prefix = "boot_complete";
 
   auto build_date_str = android::base::GetProperty("ro.build.date.utc", "");
   int32_t build_date;
   if (!android::base::ParseInt(build_date_str, &build_date)) {
-    return std::string();
+    return std::string_view();
   }
 
   BootEventRecordStore boot_event_store;
   BootEventRecordStore::BootEventRecord record;
   if (!boot_event_store.GetBootEvent(kBuildDateKey, &record)) {
-    boot_complete_prefix = "factory_reset_" + boot_complete_prefix;
     boot_event_store.AddBootEventWithValue(kBuildDateKey, build_date);
     BootReasonAddToHistory("reboot,factory_reset");
+    return BootEventRecordStore::kFactoryResetBootCompletePrefix;
   } else if (build_date != record.second) {
-    boot_complete_prefix = "ota_" + boot_complete_prefix;
     boot_event_store.AddBootEventWithValue(kBuildDateKey, build_date);
     BootReasonAddToHistory("reboot,ota");
+    return BootEventRecordStore::kOtaBootCompletePrefix;
   }
-
-  return boot_complete_prefix;
+  return BootEventRecordStore::kBootCompletePrefix;
 }
 
 // Records the value of a given ro.boottime.init property in milliseconds.
@@ -1352,23 +1350,15 @@ void RecordBootComplete() {
   // The boot_complete metric has two variants: boot_complete and
   // ota_boot_complete.  The latter signifies that the device is booting after
   // a system update.
-  std::string boot_complete_prefix = CalculateBootCompletePrefix();
+  std::string_view boot_complete_prefix = CalculateBootCompletePrefix();
   if (boot_complete_prefix.empty()) {
     // The system is hosed because the build date property could not be read.
     return;
   }
 
-  // The *_no_encryption events are emitted unconditionally, since they are left
-  // over from a time when encryption meant "full-disk encryption".  But Android
-  // now always uses file-based encryption instead of full-disk encryption.  At
-  // some point, these misleading and redundant events should be removed.
-  boot_event_store.AddBootEventWithValue(boot_complete_prefix + "_no_encryption",
-                                         uptime_s.count());
-
-  // Record the total time from device startup to boot complete.  Note: we are
-  // recording seconds here even though the field in statsd atom specifies
-  // milliseconds.
-  boot_event_store.AddBootEventWithValue(boot_complete_prefix, uptime_s.count());
+  // Note: we are recording seconds here even though the field in statsd atom
+  // specifies milliseconds.
+  boot_event_store.AddBootCompleteEvents(std::string(boot_complete_prefix), uptime_s.count());
 
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init");
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init.first_stage");
