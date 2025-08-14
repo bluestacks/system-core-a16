@@ -31,7 +31,6 @@ using android::base::unique_fd;
 using fs_mgr::WaitForFile;
 
 constexpr int kDefaultQueueDepth = 32;
-constexpr int kDefaultHwQueues = 1;
 constexpr int kDefaultMaxIoBufBytes = 64 * 1024;
 
 int SnapshotInitTarget(struct ublksrv_dev* dev, int type, int argc, char** argv) {

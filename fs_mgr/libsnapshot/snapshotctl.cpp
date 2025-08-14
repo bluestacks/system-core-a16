@@ -796,7 +796,6 @@ bool DumpVerityHash(int argc, char** argv) {
 
     bool verification_required = false;
     std::string hash_file_path = argv[2];
-    bool metadata_on_super = false;
     if (argc == 4) {
         if (argv[3] == "-verify"s) {
             verification_required = true;
