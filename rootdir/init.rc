@@ -1081,7 +1081,16 @@ on property:vold.checkpoint_committed=1
 # stuff) and we absolutely want to be before netd and the system boot slot is
 # considered to have booted successfully.
 on load-bpf-programs
+    # Temporarily relax access to kallsyms so that bpfloader can resolve kernel symbols
+    # at load time.
+    #
+    # NOTE: Still requires CAP_SYSLOG and sepolicy allow rules to read /proc/kallsyms
+    write /proc/sys/kernel/kptr_restrict 1
+
     exec_start bpfloader
+
+    # Restore kallsyms protection after bpf programs have been loaded.
+    write /proc/sys/kernel/kptr_restrict 2
 
 on bpf-progs-loaded
     start netd
