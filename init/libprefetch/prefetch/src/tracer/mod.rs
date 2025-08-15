@@ -660,8 +660,12 @@ pub(crate) mod tests {
         base: &Path,
         files: &mut [(NamedTempFile, Vec<Range<u64>>)],
         rf: &RecordsFile,
-    ) -> (RecordsFile, Vec<(PathBuf, Vec<Range<u64>>)>) {
+    ) -> (RecordsFile, Vec<(PathBuf, Vec<Range<u64>>)>, Vec<File>) {
         let mut new_files = vec![];
+        // Some security solution reads every file after it was closed, and
+        // keeping uncaches files open as a workaround to prevent that behavior
+        // from interfering with the test.
+        let mut out_files = vec![];
         for (in_file, ranges) in files {
             let out_path = base.join(in_file.path().file_name().unwrap());
             let mut out_file = OpenOptions::new()
@@ -685,6 +689,7 @@ pub(crate) mod tests {
             out_file.write_all(&*buf).unwrap();
 
             new_files.push((out_path, ranges.clone()));
+            out_files.push(out_file);
         }
 
         for inode in rf.inner.inode_map.values() {
@@ -700,7 +705,7 @@ pub(crate) mod tests {
             }
         }
         let modified_rf = modify_records_file(rf, base.to_str().unwrap());
-        (modified_rf, new_files)
+        (modified_rf, new_files, out_files)
     }
 
     // Generates mem trace string from given args. Sometimes injects lines that are of no importance

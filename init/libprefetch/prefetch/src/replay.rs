@@ -648,7 +648,7 @@ pub mod tests {
             generate_cached_files_and_record(None, create_symlink, Some(page_size));
 
         // Here "uncached_files" emulate the files after reboot when none of those files data is in cache.
-        let (mut uncached_rf, mut uncached_files) =
+        let (mut uncached_rf, mut uncached_files, _out_files) =
             copy_uncached_files_and_record_from(Path::new(&test_base_dir), &mut files, &rf);
 
         // Injects error(s) in the form of invalid filename
