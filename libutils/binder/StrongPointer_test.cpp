@@ -66,11 +66,13 @@ class DoNothingAllocator : public Allocator {
   public:
     DoNothingAllocator() {
         ON_CALL(*this, allocate(_, _)).WillByDefault([](size_t, size_t) { return nullptr; });
+        ON_CALL(*this, reallocate(_, _)).WillByDefault([](void*, size_t) { return nullptr; });
         ON_CALL(*this, deallocate(_)).WillByDefault([](void* ptr) { ASSERT_EQ(ptr, nullptr); });
         ON_CALL(*this, abort()).WillByDefault([]() { std::abort(); });
     }
 
     MOCK_METHOD(void*, allocate, (size_t size, size_t alignment), (override));
+    MOCK_METHOD(void*, reallocate, (void* ptr, size_t size), (override));
     MOCK_METHOD(void, deallocate, (void* ptr), (override));
     MOCK_METHOD(void, abort, (), (override));
 };
