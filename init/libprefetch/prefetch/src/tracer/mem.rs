@@ -754,7 +754,7 @@ mod tests {
         let test_base_dir = setup_test_dir();
         let (rf, mut files) =
             generate_cached_files_and_record(None, true, Some(page_size().unwrap() as u64));
-        let (_uncached_rf, uncached_files) =
+        let (_uncached_rf, uncached_files, _out_files) =
             copy_uncached_files_and_record_from(Path::new(&test_base_dir), &mut files, &rf);
         let mut mount_include = HashMap::new();
 
@@ -842,7 +842,7 @@ mod tests {
         let test_base_dir = setup_test_dir();
         let (rf, mut files) =
             generate_cached_files_and_record(None, true, Some(page_size().unwrap() as u64));
-        let (_uncached_rf, uncached_files) =
+        let (_uncached_rf, uncached_files, _out_files) =
             copy_uncached_files_and_record_from(Path::new(&test_base_dir), &mut files, &rf);
         let mut mount_include = HashMap::new();
 
