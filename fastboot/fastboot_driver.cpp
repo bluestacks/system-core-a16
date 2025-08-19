@@ -538,7 +538,7 @@ RetCode FastBootDriver::SendBuffer(android::base::borrowed_fd fd, size_t size) {
     while (remaining) {
         // Memory map the file
         size_t len = std::min(remaining, MAX_MAP_SIZE);
-        auto mapping{android::base::MappedFile::FromFd(fd, offset, len, PROT_READ)};
+        auto mapping{android::base::MappedFile::Create(fd, offset, len, PROT_READ)};
         if (!mapping) {
             error_ = "Creating filemap failed";
             return IO_ERROR;
