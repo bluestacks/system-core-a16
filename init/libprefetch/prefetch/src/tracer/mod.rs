@@ -121,7 +121,6 @@ impl Drop for TraceEventFile {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct TracerConfigs {
-    pub excluded_paths: Vec<String>,
     pub buffer_size_file_path: String,
     pub trace_base_path: PathBuf,
     pub trace_events: Vec<String>,
@@ -131,6 +130,8 @@ pub(crate) struct TracerConfigs {
     // the end of run.
     #[allow(dead_code)]
     trace_files: Vec<TraceEventFile>,
+    pub exclude_mount_prefix: Vec<String>,
+    pub include_mount_prefix: Vec<String>,
 }
 
 impl TracerConfigs {
@@ -140,6 +141,8 @@ impl TracerConfigs {
         tracer_type: TracerType,
         trace_mount_point: Option<String>,
         tracing_instance: Option<String>,
+        exclude_mount_prefix: Vec<String>,
+        include_mount_prefix: Vec<String>,
     ) -> Result<Self, Error> {
         static TRACE_MOUNT_POINT: &str = "/sys/kernel/tracing";
 
@@ -170,13 +173,14 @@ impl TracerConfigs {
         }
 
         let mut configs = TracerConfigs {
-            excluded_paths: vec![],
             buffer_size_file_path: TRACE_BUFFER_SIZE_FILE.to_owned(),
             trace_base_path,
             trace_events: vec![],
             mountinfo_path: None,
             trace_operations: HashSet::new(),
             trace_files: vec![],
+            exclude_mount_prefix,
+            include_mount_prefix,
         };
 
         match tracer_type {
@@ -258,6 +262,8 @@ impl Tracer {
         tracer_type: TracerType,
         tracing_instance: Option<String>,
         setup_tracing: bool,
+        exclude_mount_prefix: Vec<String>,
+        include_mount_prefix: Vec<String>,
     ) -> Result<(Self, Sender<()>), Error> {
         /// Trace pipe path relative to trace mount point
         static TRACE_PIPE_PATH: &str = "trace_pipe";
@@ -271,6 +277,8 @@ impl Tracer {
             tracer_type.clone(),
             None,
             tracing_instance,
+            exclude_mount_prefix,
+            include_mount_prefix,
         )?;
 
         let pipe_path = Path::new(&configs.trace_base_path).join(TRACE_PIPE_PATH);
@@ -490,6 +498,8 @@ pub(crate) mod tests {
             TracerType::Mem,
             Some(mount_point.to_str().unwrap().to_owned()),
             None,
+            vec![],
+            vec![],
         )
         .unwrap();
     }
@@ -504,6 +514,8 @@ pub(crate) mod tests {
                 TracerType::Mem,
                 Some(mount_point.to_str().unwrap().to_owned()),
                 None,
+                vec![],
+                vec![],
             )
             .unwrap_err()
             .to_string(),
@@ -524,6 +536,8 @@ pub(crate) mod tests {
                 TracerType::Mem,
                 Some(mount_point.to_str().unwrap().to_owned()),
                 Some("my_instance".to_owned()),
+                vec![],
+                vec![],
             )
             .unwrap_err()
             .to_string(),
@@ -542,7 +556,9 @@ pub(crate) mod tests {
             true,
             TracerType::Mem,
             Some(mount_point.to_str().unwrap().to_owned()),
-            None
+            None,
+            vec![],
+            vec![],
         )
         .is_ok());
     }
@@ -555,7 +571,9 @@ pub(crate) mod tests {
             true,
             TracerType::Mem,
             Some(mount_point.to_str().unwrap().to_owned()),
-            Some("my_instance".to_owned())
+            Some("my_instance".to_owned()),
+            vec![],
+            vec![],
         )
         .is_ok())
     }
@@ -869,6 +887,8 @@ pub(crate) mod tests {
             t.clone(),
             Some(trace_mount_point.to_str().unwrap().to_string()),
             None,
+            vec![],
+            vec![],
         )
         .unwrap();
         let mut tempfiles = vec![buffer_size_file];
