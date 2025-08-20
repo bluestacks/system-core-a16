@@ -43,7 +43,7 @@ class BootEventRecordStore {
 
   // Persists the boot complete events with |prefix| with the associated |value|
   // in the record store.
-  void AddBootCompleteEvents(std::string prefix, int32_t value);
+  void AddBootCompleteEvents(const std::string& prefix, int32_t value);
 
   // Queries the named boot |event|. |record| must be non-null. |record|
   // contains the boot event data on success. Returns true iff the query is
