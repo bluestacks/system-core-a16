@@ -95,7 +95,7 @@ void BootEventRecordStore::AddBootEventWithValue(const std::string& event, int32
   close(record_fd);
 }
 
-void BootEventRecordStore::AddBootCompleteEvents(std::string prefix, int32_t value) {
+void BootEventRecordStore::AddBootCompleteEvents(const std::string& prefix, int32_t value) {
   RemovePreviousBootCompleteEvents();
   // The *_no_encryption events are emitted unconditionally, since they are left
   // over from a time when encryption meant "full-disk encryption".  But Android
