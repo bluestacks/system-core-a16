@@ -34,14 +34,12 @@ cc_defaults {
         "liblog",
     ],
     static_libs: [
-        "libbrotli",
         "libdm",
         "libfstab",
         "libsnapshot_flags_cc_lib",
         "update_metadata-protos",
     ],
     whole_static_libs: [
-        "libbrotli",
         "libcutils",
         "libext2_uuid",
         "libext4_utils",
@@ -196,7 +194,6 @@ cc_defaults {
         "liblog",
     ],
     static_libs: [
-        "libbrotli",
         "libz",
         "liblz4",
         "libzstd",
@@ -288,7 +285,6 @@ cc_defaults {
         "android.hardware.boot@1.0",
         "android.hardware.boot@1.1",
         "android.hardware.boot-V1-ndk",
-        "libbrotli",
         "libfs_mgr_binder",
         "libgflags",
         "libgsi",
@@ -383,7 +379,6 @@ cc_binary {
         "android/snapshot/snapshot.proto",
     ],
     static_libs: [
-        "libbrotli",
         "libfstab",
         "libz",
         "libavb",
@@ -444,7 +439,6 @@ cc_test {
         "libz",
     ],
     static_libs: [
-        "libbrotli",
         "libgtest",
         "libsnapshot_cow",
     ],
@@ -478,7 +472,6 @@ cc_binary {
     ],
     static_libs: [
         "libbase",
-        "libbrotli",
         "libcrypto_static",
         "liblog",
         "libgflags",
@@ -514,7 +507,6 @@ cc_binary {
         "libext4_utils",
         "libsnapshot_cow",
         "libcrypto",
-        "libbrotli",
         "libz",
         "libdm",
         "liblz4",
