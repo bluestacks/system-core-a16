@@ -1194,7 +1194,7 @@ int SecondStageMain(int argc, char** argv) {
         }
     }
 
-    // This needs to happen before SetKptrRestrictAction, as we are trying to
+    // This needs to happen before kptr_restrict is raised, as we are trying to
     // open /proc/kallsyms while still being allowed to see the full addresses
     // (since init holds CAP_SYSLOG, and Linux boots with kptr_restrict=0). The
     // address visibility through the saved fd (more specifically, the backing
@@ -1203,7 +1203,6 @@ int SecondStageMain(int argc, char** argv) {
     Service::OpenAndSaveStaticKallsymsFd();
 
     am.QueueBuiltinAction(SetupCgroupsAction, "SetupCgroups");
-    am.QueueBuiltinAction(SetKptrRestrictAction, "SetKptrRestrict");
     am.QueueBuiltinAction(TestPerfEventSelinuxAction, "TestPerfEventSelinux");
     am.QueueEventTrigger("early-init");
     am.QueueBuiltinAction(ConnectEarlyStageSnapuserdAction, "ConnectEarlyStageSnapuserd");
