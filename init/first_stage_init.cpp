@@ -285,9 +285,8 @@ bool LoadKernelModules(BootMode boot_mode, bool want_console, bool want_parallel
     modules_loaded = m.GetModuleCount();
     if (modules_loaded > 0) {
         LOG(INFO) << "Loaded " << modules_loaded << " modules from " << MODULE_BASE_DIR;
-        return retval;
     }
-    return true;
+    return retval;
 }
 
 static bool IsChargerMode(const std::string& cmdline, const std::string& bootconfig) {
