@@ -96,7 +96,7 @@ void ColdBoot::Run() {
     std::unique_ptr<ColdbootRunner> runner;
 
     unsigned int parallelism = std::thread::hardware_concurrency() ?: 4;
-    if constexpr (flags::enable_coldboot_threadpool()) {
+    if constexpr (flags::enable_threadpool_coldboot()) {
         runner = std::make_unique<ColdbootRunnerThreadPool>(
                 parallelism, uevent_queue_, uevent_handlers_, enable_parallel_restorecon_,
                 restorecon_queue_);
