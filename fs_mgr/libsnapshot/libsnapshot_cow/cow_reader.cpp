@@ -394,7 +394,8 @@ bool CowReader::GetSequenceDataV2(std::vector<uint32_t>* merge_op_blocks,
     return false;
 }
 
-bool CowReader::GetSequenceData(std::vector<uint32_t>* merge_op_blocks, std::vector<uint32_t>* other_ops,
+bool CowReader::GetSequenceData(std::vector<uint32_t>* merge_op_blocks,
+                                std::vector<uint32_t>* other_ops,
                                 std::unordered_map<uint32_t, int>* block_map) {
     std::unordered_set<uint32_t> seq_ops_set;
     // read sequence ops data
@@ -730,9 +731,6 @@ ssize_t CowReader::ReadData(const CowOperation* op, void* buffer, size_t buffer_
             break;
         case kCowCompressGz:
             decompressor = IDecompressor::Gz();
-            break;
-        case kCowCompressBrotli:
-            decompressor = IDecompressor::Brotli();
             break;
         case kCowCompressZstd:
             if (op_buf_size != op->data_length) {
