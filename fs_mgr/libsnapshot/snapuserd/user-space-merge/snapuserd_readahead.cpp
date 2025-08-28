@@ -149,6 +149,7 @@ class [[nodiscard]] AutoNotifyReadAheadFailed {
 };
 
 bool ReadAhead::ReconstructDataFromCow() {
+    std::unique_lock<std::mutex> lock(snapuserd_->GetBufferLock());
     std::unordered_map<uint64_t, void*>& read_ahead_buffer_map = snapuserd_->GetReadAheadMap();
     loff_t metadata_offset = 0;
     loff_t start_data_offset = snapuserd_->GetBufferDataOffset();
@@ -203,6 +204,8 @@ bool ReadAhead::ReconstructDataFromCow() {
 
         break;
     }
+
+    lock.unlock();
 
     snapuserd_->SetMergedBlockCountForNextCommit(total_blocks_merged);
 
