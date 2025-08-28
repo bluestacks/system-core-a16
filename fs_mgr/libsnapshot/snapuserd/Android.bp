@@ -138,7 +138,6 @@ cc_defaults {
 
     static_libs: [
         "libbase",
-        "libbrotli",
         "libcutils_sockets",
         "libdm",
         "libext2_uuid",
@@ -229,7 +228,6 @@ cc_defaults {
         "liblog",
     ],
     static_libs: [
-        "libbrotli",
         "libcutils_sockets",
         "libdm",
         "libext2_uuid",
@@ -343,7 +341,6 @@ cc_binary_host {
         "liblog",
     ],
     static_libs: [
-        "libbrotli",
         "libcutils_sockets",
         "libdm",
         "libext2_uuid",
