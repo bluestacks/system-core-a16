@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#include "include/modprobe/module_dependency_graph.h"
 #include <modprobe/module_dependency_graph.h>
+#include <modprobe/utils.h>
 
 #include <fnmatch.h>
 
@@ -59,7 +59,7 @@ const std::string& ModuleDependencyGraph::ResolveAlias(const std::string& module
 }
 
 std::shared_ptr<Module> ModuleDependencyGraph::GetModule(const std::string& module_name) {
-    const std::string& resolved_name = ResolveAlias(module_name);
+    const std::string& resolved_name = ResolveAlias(CanonicalizeModulePath(module_name));
     if (!modules_.contains(resolved_name)) {
         LOG(ERROR) << "LMP: DependencyGraph: Module " << module_name << " not in .dep file";
         return nullptr;
