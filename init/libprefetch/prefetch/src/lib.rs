@@ -58,11 +58,7 @@ pub use arch::android::*;
 /// Records prefetch data for the given configuration
 pub fn record(args: &RecordArgs) -> Result<(), Error> {
     #[cfg(target_os = "android")]
-    if !ensure_record_is_ready(
-        &args.get_ready_path(),
-        &args.get_pack_path(),
-        &args.build_fingerprint_path,
-    )? {
+    if !ensure_record_is_ready(&args.ready_path, &args.path, &args.build_fingerprint_path)? {
         info!("Cannot perform record -- skipping");
         return Ok(());
     }
@@ -103,22 +99,18 @@ pub fn record(args: &RecordArgs) -> Result<(), Error> {
     thd.join()
         .map_err(|_| Error::ThreadPool { error: "Failed to join timeout thread".to_string() })?;
 
-    let path = args.get_pack_path();
+    let mut out_file =
+        OpenOptions::new().write(true).create(true).truncate(true).open(&args.path).map_err(
+            |source| Error::Create { source, path: args.path.to_str().unwrap().to_owned() },
+        )?;
 
-    let mut out_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)
-        .map_err(|source| Error::Create { source, path: path.to_str().unwrap().to_owned() })?;
-
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
-        .map_err(|source| Error::Create { source, path: path.to_str().unwrap().to_owned() })?;
+    std::fs::set_permissions(&args.path, std::fs::Permissions::from_mode(0o644))
+        .map_err(|source| Error::Create { source, path: args.path.to_str().unwrap().to_owned() })?;
 
     // Write the record file
     out_file
         .write_all(&rf.add_checksum_and_serialize()?)
-        .map_err(|source| Error::Write { path: path.to_str().unwrap().to_owned(), source })?;
+        .map_err(|source| Error::Write { path: args.path.to_str().unwrap().to_owned(), source })?;
     out_file.sync_all()?;
 
     // Write build-finger-print file
