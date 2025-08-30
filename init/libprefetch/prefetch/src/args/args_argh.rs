@@ -43,11 +43,6 @@ pub enum SubCommands {
 }
 
 #[cfg(target_os = "android")]
-fn default_ready_path() -> PathBuf {
-    PathBuf::from("/metadata/prefetch/prefetch_ready")
-}
-
-#[cfg(target_os = "android")]
 fn default_build_finger_print_path() -> PathBuf {
     PathBuf::from("/metadata/prefetch/build_finger_print")
 }
@@ -56,10 +51,6 @@ impl Default for SubCommands {
     fn default() -> Self {
         Self::Dump(DumpArgs::default())
     }
-}
-
-fn default_path() -> PathBuf {
-    PathBuf::from("/metadata/prefetch/prefetch.pack")
 }
 
 fn parse_tracing_instance(value: &str) -> Result<Option<String>, String> {
@@ -80,9 +71,13 @@ pub struct RecordArgs {
     /// file path where the records will be written to
     ///
     /// A new file is created at the given path. If the path exists, it
-    /// will be overwritten
-    #[argh(option, default = "default_path()")]
-    pub path: PathBuf,
+    /// will be overwritten.
+    ///
+    /// The default value depends on tracing_instance:
+    /// "--tracing_instance" is not specified: /metadata/prefetch/prefetch.pack.
+    /// "--tracing_instance" is specified: /metadata/prefetch/<tracing_instance>.pack.
+    #[argh(option)]
+    pub path: Option<PathBuf>,
 
     /// when set an intermediate file will be created that provides more information
     /// about collected data.
@@ -145,8 +140,61 @@ pub struct RecordArgs {
     /// file path to check if prefetch_ready is present.
     ///
     /// A new file is created at the given path if it's not present.
-    #[argh(option, default = "default_ready_path()")]
-    pub ready_path: PathBuf,
+    ///
+    /// Default value depends on tracing_instance:
+    /// "--tracing_instance" is not specified: /metadata/prefetch/prefetch_ready.
+    /// "--tracing_instance" is specified: /metadata/prefetch/<tracing_instance>_ready.
+    #[argh(option)]
+    pub ready_path: Option<PathBuf>,
+}
+
+impl RecordArgs {
+    /// Resolves the final path for the prefetch `.pack` file.
+    ///
+    /// This function determines which path to use in the following order of priority:
+    /// 1. The path provided by the user via the `--path` argument.
+    /// 2. A path derived from the `--tracing-instance` argument, in the format
+    ///    `/metadata/prefetch/{instance}.pack`.
+    /// 3. The default path, `/metadata/prefetch/prefetch.pack`, if neither of the above
+    ///    are specified.
+    ///
+    /// # Returns
+    ///
+    /// A `PathBuf` containing the resolved path to the `.pack` file.
+    pub fn get_pack_path(&self) -> PathBuf {
+        match &self.path {
+            Some(path) => path.to_path_buf(),
+            None => match &self.tracing_instance {
+                Some(instance) => PathBuf::from(format!("/metadata/prefetch/{instance}.pack")),
+                None => PathBuf::from("/metadata/prefetch/prefetch.pack"),
+            },
+        }
+    }
+
+    /// Resolves the final path for the prefetch "ready" file.
+    ///
+    /// This function is only available on Android.
+    ///
+    /// It determines which path to use in the following order of priority:
+    /// 1. The path provided by the user via the `--ready-path` argument.
+    /// 2. A path derived from the `--tracing-instance` argument, in the format
+    ///    `/metadata/prefetch/{instance}_ready`.
+    /// 3. The default path, `/metadata/prefetch/prefetch_ready`, if neither of the above
+    ///    are specified.
+    ///
+    /// # Returns
+    ///
+    /// A `PathBuf` containing the resolved path to the "ready" file.
+    #[cfg(target_os = "android")]
+    pub fn get_ready_path(&self) -> PathBuf {
+        match &self.ready_path {
+            Some(ready_path) => ready_path.to_path_buf(),
+            None => match &self.tracing_instance {
+                Some(instance) => PathBuf::from(format!("/metadata/prefetch/{instance}_ready")),
+                None => PathBuf::from("/metadata/prefetch/prefetch_ready"),
+            },
+        }
+    }
 }
 
 /// Type of tracing subsystem to use.
@@ -183,7 +231,7 @@ impl Default for TracerType {
 #[argh(subcommand, name = "replay")]
 pub struct ReplayArgs {
     /// file path from where the records will be read
-    #[argh(option, default = "default_path()")]
+    #[argh(option)]
     pub path: PathBuf,
 
     /// IO depth. Number of IO that can go in parallel.
