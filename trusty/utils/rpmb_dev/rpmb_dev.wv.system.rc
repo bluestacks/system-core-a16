@@ -1,5 +1,5 @@
 service storageproxyd_wv_system /system_ext/bin/storageproxyd.system \
-        -d VSOCK:${trusty.widevine_vm.vm_cid}:1 \
+        -d VSOCK:${trusty.widevine_vm.vm_cid}:0 \
         -r /dev/socket/rpmb_mock_wv_system \
         -p /data/secure_storage_wv_system \
         -t sock
