@@ -21,6 +21,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/strings.h>
 
 namespace android {
 namespace modprobe {
@@ -49,22 +50,30 @@ static std::unordered_map<std::string, std::string> BuildPathToName(
     return path_to_name;
 }
 
-const std::string& ModuleDependencyGraph::ResolveAlias(const std::string& module_name) {
+std::vector<std::string> ModuleDependencyGraph::GetModuleNames(const std::string& module_name) {
+    std::vector<std::string> module_names = {CanonicalizeModulePath(module_name)};
     for (const auto& [alias, aliased_name] : module_aliases_) {
         if (fnmatch(alias.c_str(), module_name.c_str(), 0) == 0) {
-            return aliased_name;
+            module_names.push_back(CanonicalizeModulePath(aliased_name));
         }
     }
-    return module_name;
+    return module_names;
 }
 
-std::shared_ptr<Module> ModuleDependencyGraph::GetModule(const std::string& module_name) {
-    const std::string& resolved_name = ResolveAlias(CanonicalizeModulePath(module_name));
-    if (!modules_.contains(resolved_name)) {
-        LOG(ERROR) << "LMP: DependencyGraph: Module " << module_name << " not in .dep file";
-        return nullptr;
+std::vector<std::shared_ptr<Module>> ModuleDependencyGraph::GetModules(
+        const std::string& module_name) {
+    const auto& module_names = GetModuleNames(module_name);
+    std::vector<std::shared_ptr<Module>> modules;
+    for (const auto& name : module_names) {
+        if (modules_.contains(name)) {
+            modules.push_back(modules_.at(name));
+        }
     }
-    return modules_.at(resolved_name);
+    if (modules.empty()) {
+        LOG(ERROR) << "LMP: DependencyGraph: Unable to find a module for " << module_name
+                   << " in the .dep file, tried: " << base::Join(module_names, ",");
+    }
+    return modules;
 }
 
 static bool HasLoop(const std::shared_ptr<Module>& mod,
@@ -127,7 +136,7 @@ ModuleDependencyGraph::ModuleDependencyGraph(const ModuleConfig& config)
     }
 
     for (const auto& [mod_name, softdep] : config.module_pre_softdep) {
-        if (std::shared_ptr<Module> pre_softdep = GetModule(softdep)) {
+        for (std::shared_ptr<Module> pre_softdep : GetModules(softdep)) {
             std::shared_ptr<Module> mod = modules_.at(mod_name);
             mod->pre_softdeps.insert(pre_softdep);
             AddUnmetDependency(mod, pre_softdep);
@@ -135,7 +144,7 @@ ModuleDependencyGraph::ModuleDependencyGraph(const ModuleConfig& config)
     }
 
     for (const auto& [mod_name, softdep] : config.module_post_softdep) {
-        if (std::shared_ptr<Module> post_softdep = GetModule(softdep)) {
+        for (std::shared_ptr<Module> post_softdep : GetModules(softdep)) {
             std::shared_ptr<Module> mod = modules_.at(mod_name);
             mod->post_softdeps.insert(post_softdep);
             AddUnmetDependency(post_softdep, mod);
@@ -143,7 +152,7 @@ ModuleDependencyGraph::ModuleDependencyGraph(const ModuleConfig& config)
     }
 
     for (const std::string& name : config.module_blocklist) {
-        if (std::shared_ptr<Module> mod = GetModule(name)) {
+        for (std::shared_ptr<Module> mod : GetModules(name)) {
             mod->MarkBlocklisted();
         }
     }
@@ -169,7 +178,7 @@ void ModuleDependencyGraph::RemoveUnmetDependency(std::shared_ptr<Module> mod,
 void ModuleDependencyGraph::AddModule(const std::string& module_name) {
     std::lock_guard<std::mutex> lock(graph_lock_);
 
-    if (std::shared_ptr<Module> mod = GetModule(module_name)) {
+    for (std::shared_ptr<Module> mod : GetModules(module_name)) {
         AddModuleLocked(mod);
     }
 }
