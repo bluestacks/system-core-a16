@@ -50,7 +50,8 @@ fn verify_and_fix(args: &mut MainArgs) -> Result<(), Error> {
     match &mut args.nested {
         SubCommands::Record(arg) => {
             if arg.debug && arg.int_path.is_none() {
-                arg.int_path = Some(PathBuf::from(format!("{}.int", arg.path.to_str().unwrap())));
+                let path = arg.get_pack_path();
+                arg.int_path = Some(PathBuf::from(format!("{}.int", path.to_str().unwrap())));
             }
 
             if let Some(p) = &arg.int_path {
