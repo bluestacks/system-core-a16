@@ -5,6 +5,7 @@ service trusty-coverage-controller /vendor/bin/trusty-coverage-controller -o /da
     disabled
 
 on property:persist.trusty.coverage.enabled=1
+    mkdir /data/vendor/trusty/ 0770 root root
     mkdir /data/vendor/trusty/coverage 0770 root root
     start trusty-coverage-controller
 

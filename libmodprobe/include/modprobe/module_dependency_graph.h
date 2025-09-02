@@ -108,8 +108,8 @@ class ModuleDependencyGraph {
     std::unordered_set<std::string> PopReadyModules();
 
   private:
-    const std::string& ResolveAlias(const std::string& module_name);
-    std::shared_ptr<Module> GetModule(const std::string& module_name)
+    std::vector<std::string> GetModuleNames(const std::string& module_name);
+    std::vector<std::shared_ptr<Module>> GetModules(const std::string& module_name)
             EXCLUSIVE_LOCKS_REQUIRED(graph_lock_);
     void AddModuleLocked(std::shared_ptr<Module>& module) EXCLUSIVE_LOCKS_REQUIRED(graph_lock_);
     void MarkModuleLoadResult(const std::string& module_path, bool failed);
