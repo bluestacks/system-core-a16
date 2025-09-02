@@ -700,6 +700,7 @@ MERGE_GROUP_STATE SnapshotHandler::ProcessMergingBlock(uint64_t new_block, void*
     int ra_index = it->second;
     MergeGroupState* blk_state = merge_blk_state_[ra_index].get();
     {
+        std::lock_guard<std::mutex> buffer_lock(GetBufferLock());
         std::unique_lock<std::mutex> lock(blk_state->m_lock);
 
         MERGE_GROUP_STATE state = blk_state->merge_state_;
