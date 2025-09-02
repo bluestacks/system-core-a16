@@ -947,6 +947,22 @@ static void property_initialize_ro_product_props() {
     }
 }
 
+static void initialize_microdroid_properties(std::map<std::string, std::string>* properties) {
+    if (properties == NULL || !IsMicrodroid()) {
+        return;
+    }
+
+    char hostname_cstr[HOST_NAME_MAX];
+    if (gethostname(hostname_cstr, sizeof(hostname_cstr)) != 0) {
+        PLOG(ERROR) << "Failed to gethostname";
+        return;
+    }
+    const std::string hostname(hostname_cstr);
+    if (hostname != "localhost") {
+        (*properties)["ro.product.name"] = hostname;
+    }
+}
+
 // If the ro.build.fingerprint property has not been set, derive it from constituent pieces
 static void property_derive_build_fingerprint() {
     std::string build_fingerprint = GetProperty("ro.build.fingerprint", "");
@@ -1182,6 +1198,7 @@ void PropertyLoadBootDefaults() {
         }
     }
 
+    initialize_microdroid_properties(&properties);
     for (const auto& [name, value] : properties) {
         std::string error;
         if (PropertySetNoSocket(name, value, &error) != PROP_SUCCESS) {
