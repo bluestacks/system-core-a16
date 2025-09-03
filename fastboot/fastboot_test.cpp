@@ -16,8 +16,17 @@
 
 #include "fastboot.h"
 
+#include <fcntl.h>
+
+#include <android-base/file.h>
 #include <android-base/logging.h>
 #include <gtest/gtest.h>
+
+#include "fastboot_driver_mock.h"
+#include "fastboot_test.h"
+
+using namespace fastboot;
+using ::testing::NiceMock;
 
 TEST(FastBoot, ParseOsPatchLevel) {
     FastBootTool fb;
@@ -249,6 +258,40 @@ TEST(FastBoot, ParseNetworkSerial) {
 
     ParseNetworkSerialNegativeTest("wrong port", "tcp:192.168.1.0:-1",
                                    FastbootError::Type::NETWORK_SERIAL_WRONG_ADDRESS);
+}
+
+class FlashingTest : public ::testing::Test {
+  protected:
+    virtual void SetUp() override {
+        fp_.fb = &fb_;
+        fp_.source = std::make_unique<TestImageSource>();
+    }
+
+    FlashingPlan fp_;
+    NiceMock<MockFastbootDriver> fb_;
+};
+
+TEST_F(FlashingTest, FlashUnalignedChunk) {
+    fp_.sparse_limit = 4096;
+
+    TemporaryFile tmp;
+    ASSERT_GE(tmp.fd, 0);
+
+    std::string zeroes(4608, '\0');
+    ASSERT_TRUE(android::base::WriteStringToFile(zeroes, tmp.path));
+
+    do_flash("test", tmp.path, false, &fp_);
+}
+
+TEST_F(FlashingTest, FlashUnsupportedUnalignedChunk) {
+    TemporaryFile tmp;
+    ASSERT_GE(tmp.fd, 0);
+
+    std::string zeroes(4609, '\0');
+    ASSERT_TRUE(android::base::WriteStringToFile(zeroes, tmp.path));
+
+    std::vector<SparsePtr> out;
+    ASSERT_FALSE(split_file(tmp.fd, 4096, &out));
 }
 
 int main(int argc, char* argv[]) {

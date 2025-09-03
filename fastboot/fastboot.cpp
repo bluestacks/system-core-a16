@@ -89,6 +89,8 @@ using android::base::ReadFully;
 using android::base::Split;
 using android::base::Trim;
 using android::base::unique_fd;
+using fastboot::IFastBootDriver;
+using fastboot::SUCCESS;
 using namespace std::placeholders;
 
 #define FASTBOOT_INFO_VERSION 1
@@ -983,32 +985,6 @@ static void DumpInfo() {
     fprintf(stderr, "--------------------------------------------\n");
 }
 
-std::vector<SparsePtr> resparse_file(sparse_file* s, int64_t max_size) {
-    if (max_size <= 0 || max_size > std::numeric_limits<uint32_t>::max()) {
-        die("invalid max size %" PRId64, max_size);
-    }
-
-    const int files = sparse_file_resparse(s, max_size, nullptr, 0);
-    if (files < 0) die("Failed to compute resparse boundaries");
-
-    auto temp = std::make_unique<sparse_file*[]>(files);
-    const int rv = sparse_file_resparse(s, max_size, temp.get(), files);
-    if (rv < 0) die("Failed to resparse");
-
-    std::vector<SparsePtr> out_s;
-    for (int i = 0; i < files; i++) {
-        out_s.emplace_back(temp[i], sparse_file_destroy);
-    }
-    return out_s;
-}
-
-static std::vector<SparsePtr> load_sparse_files(int fd, int64_t max_size) {
-    SparsePtr s(sparse_file_import_auto(fd, false, true), sparse_file_destroy);
-    if (!s) die("cannot sparse read file");
-
-    return resparse_file(s.get(), max_size);
-}
-
 static uint64_t get_uint_var(const char* var_name, fastboot::IFastBootDriver* fb) {
     std::string value_str;
     if (fb->GetVar(var_name, &value_str) != fastboot::SUCCESS || value_str.empty()) {
@@ -1160,15 +1136,15 @@ static bool is_vbmeta_partition(const std::string& partition) {
 
 // Note: this only works in userspace fastboot. In the bootloader, use
 // should_flash_in_userspace().
-bool is_logical(const std::string& partition) {
+bool is_logical(IFastBootDriver* fb, const std::string& partition) {
     std::string value;
     return fb->GetVar("is-logical:" + partition, &value) == fastboot::SUCCESS && value == "yes";
 }
 
-static uint64_t get_partition_size(const std::string& partition) {
+static uint64_t get_partition_size(IFastBootDriver* fb, const std::string& partition) {
     std::string partition_size_str;
     if (fb->GetVar("partition-size:" + partition, &partition_size_str) != fastboot::SUCCESS) {
-        if (!is_logical(partition)) {
+        if (!is_logical(fb, partition)) {
             return 0;
         }
         die("cannot get partition size for %s", partition.c_str());
@@ -1177,7 +1153,7 @@ static uint64_t get_partition_size(const std::string& partition) {
     partition_size_str = fb_fix_numeric_var(partition_size_str);
     uint64_t partition_size;
     if (!android::base::ParseUint(partition_size_str, &partition_size)) {
-        if (!is_logical(partition)) {
+        if (!is_logical(fb, partition)) {
             return 0;
         }
         die("Couldn't parse partition size '%s'.", partition_size_str.c_str());
@@ -1187,7 +1163,7 @@ static uint64_t get_partition_size(const std::string& partition) {
 
 static void copy_avb_footer(const FlashingPlan* fp, const std::string& partition,
                             struct fastboot_buffer* buf) {
-    if (buf->sz < AVB_FOOTER_SIZE || is_logical(partition) ||
+    if (buf->sz < AVB_FOOTER_SIZE || is_logical(fp->fb, partition) ||
         should_flash_in_userspace(fp->source.get(), partition)) {
         return;
     }
@@ -1201,7 +1177,7 @@ static void copy_avb_footer(const FlashingPlan* fp, const std::string& partition
     }
 
     // If overflows and negative, it should be < buf->sz.
-    int64_t partition_size = static_cast<int64_t>(get_partition_size(partition));
+    int64_t partition_size = static_cast<int64_t>(get_partition_size(fp->fb, partition));
 
     if (partition_size == buf->sz) {
         return;
@@ -1243,14 +1219,17 @@ static void copy_avb_footer(const FlashingPlan* fp, const std::string& partition
     lseek(buf->fd.get(), 0, SEEK_SET);
 }
 
-void flash_partition_files(const std::string& partition, const std::vector<SparsePtr>& files) {
+void flash_partition_files(IFastBootDriver* fb, const std::string& partition,
+                           const std::vector<SparsePtr>& files) {
     for (size_t i = 0; i < files.size(); i++) {
         sparse_file* s = files[i].get();
         int64_t sz = sparse_file_len(s, true, false);
         if (sz < 0) {
             LOG(FATAL) << "Could not compute length of sparse image for " << partition;
         }
-        fb->FlashPartition(partition, s, sz, i + 1, files.size());
+        if (fb->Download(partition, s, sz, i + 1, files.size(), false) == SUCCESS) {
+            fb->Flash(partition);
+        }
     }
 }
 
@@ -1270,13 +1249,12 @@ static void flash_buf(const FlashingPlan* fp, const std::string& partition,
         }
     }
 
-    lseek(buf->fd.get(), 0, SEEK_SET);
-    if (int64_t limit = get_sparse_limit(buf->sz, fp)) {
-        auto files = load_sparse_files(buf->fd.get(), limit);
-        if (files.empty()) {
-            LOG(FATAL) << "Failed to resparse image for partition: " << partition;
+    if (int64_t limit = get_sparse_limit(buf->sz, fp); limit > 0) {
+        std::vector<SparsePtr> files;
+        if (!split_file(buf->fd.get(), limit, &files)) {
+            LOG(FATAL) << "Could not resparse file for partition: " << partition;
         }
-        flash_partition_files(partition, files);
+        flash_partition_files(fp->fb, partition, files);
     } else {
         fp->fb->FlashPartition(partition, buf->fd, buf->sz);
     }
@@ -1430,7 +1408,7 @@ static uint64_t fetch_partition(const std::string& partition, borrowed_fd fd,
     if (fetch_size == 0) {
         die("Unable to get %s. Device does not support fetch command.", FB_VAR_MAX_FETCH_SIZE);
     }
-    uint64_t partition_size = get_partition_size(partition);
+    uint64_t partition_size = get_partition_size(fb, partition);
     if (partition_size <= 0) {
         die("Invalid partition size for partition %s: %" PRId64, partition.c_str(), partition_size);
     }
@@ -1530,7 +1508,7 @@ void do_flash(const char* pname, const char* fname, const bool apply_vbmeta,
         die("cannot load '%s': %s", fname, strerror(errno));
     }
 
-    if (is_logical(pname)) {
+    if (is_logical(fp->fb, pname)) {
         fb->ResizePartition(pname, std::to_string(buf.image_size));
     }
     std::string flash_pname = repack_ramdisk(pname, &buf, fp->fb);

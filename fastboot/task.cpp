@@ -122,13 +122,15 @@ void OptimizedFlashSuperTask::Run() {
     // it will map in all of the embedded fds.
     std::vector<SparsePtr> files;
     if (int limit = get_sparse_limit(super_size_, fp_)) {
-        files = resparse_file(sparse_layout_.get(), limit);
+        if (!split_file(sparse_layout_.get(), limit, &files)) {
+            LOG(FATAL) << "Failed to resparse super partition";
+        }
     } else {
         files.emplace_back(std::move(sparse_layout_));
     }
 
     // Send the data to the device.
-    flash_partition_files(super_name_, files);
+    flash_partition_files(fp_->fb, super_name_, files);
 }
 
 std::string OptimizedFlashSuperTask::ToString() const {
@@ -273,7 +275,7 @@ ResizeTask::ResizeTask(const FlashingPlan* fp, const std::string& pname, const s
 
 void ResizeTask::Run() {
     auto resize_partition = [this](const std::string& partition) -> void {
-        if (is_logical(partition)) {
+        if (is_logical(fp_->fb, partition)) {
             fp_->fb->ResizePartition(partition, size_);
         }
     };
