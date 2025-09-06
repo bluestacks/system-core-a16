@@ -44,6 +44,7 @@
 #include <libfiemap/image_manager.h>
 #include <liblp/liblp.h>
 #include <liblp/property_fetcher.h>
+#include <linux/fs.h>
 
 #include <android/snapshot/snapshot.pb.h>
 #include <libsnapshot/capabilities.h>
@@ -1082,10 +1083,62 @@ bool SnapshotManager::UnmapCowImage(const std::string& name) {
     return images_->UnmapImageIfExists(GetCowImageDeviceName(name));
 }
 
+// Discards all blocks on the given logical COW device.
+static void DiscardCowDevice(const std::string& cow_device_name) {
+    DeviceMapper& dm = DeviceMapper::Instance();
+
+    if (dm.GetState(cow_device_name) == DmDeviceState::INVALID) {
+        // We may have cow mapped through FIEMAP, in that case cow device does not exist
+        // So this is not an error.
+        LOG(INFO) << "Cow device " << cow_device_name << " not found, skipping discard";
+        return;
+    }
+
+    std::string path;
+    if (!dm.GetDmDevicePathByName(cow_device_name, &path)) {
+        LOG(ERROR) << "Could not find device path for " << cow_device_name;
+        return;
+    }
+
+    android::base::unique_fd fd(open(path.c_str(), O_RDWR | O_CLOEXEC));
+    if (fd < 0) {
+        PLOG(ERROR) << "Failed to open " << path;
+        return;
+    }
+
+    uint64_t size = 0;
+    if (ioctl(fd.get(), BLKGETSIZE64, &size) < 0) {
+        PLOG(ERROR) << "Failed to get size of " << path;
+        return;
+    }
+
+    if (size == 0) {
+        LOG(INFO) << "Device " << path << " has size 0, nothing to discard.";
+        return;
+    }
+
+    uint64_t range[2] = {0, size};
+    auto start = std::chrono::steady_clock::now();
+    if (ioctl(fd.get(), BLKDISCARD, &range) < 0) {
+        PLOG(ERROR) << "Failed to discard " << path << " with size " << size;
+        return;
+    }
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    LOG(INFO) << "Successfully discarded " << size << " bytes on " << cow_device_name << " at "
+              << path << " in " << duration.count() << "ms";
+}
+
 bool SnapshotManager::DeleteSnapshot(LockedFile* lock, const std::string& name) {
     CHECK(lock);
     CHECK(lock->lock_mode() == LOCK_EX);
     if (!EnsureImageManager()) return false;
+
+    if (UpdateUsesUserSnapshots(lock)) {
+        // Discard is best effort, so we do not check for errors
+        DiscardCowDevice(GetCowName(name));
+    }
 
     if (!UnmapCowDevices(lock, name)) {
         return false;
