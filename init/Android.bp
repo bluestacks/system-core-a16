@@ -276,6 +276,10 @@ cc_library_static {
     ],
     recovery_available: false,
     cflags: ["-DMICRODROID=1"],
+    cppflags: [
+        "-UWORLD_WRITABLE_KMSG",
+        "-DWORLD_WRITABLE_KMSG=1",
+    ],
 }
 
 phony {
@@ -343,6 +347,10 @@ cc_binary {
     ],
     static_libs: ["libinit.microdroid"],
     cflags: ["-DMICRODROID=1"],
+    cppflags: [
+        "-UWORLD_WRITABLE_KMSG",
+        "-DWORLD_WRITABLE_KMSG=1",
+    ],
     no_full_install: true,
     visibility: ["//packages/modules/Virtualization/build/microdroid"],
 }
@@ -494,7 +502,11 @@ cc_binary {
         "avf_build_flags_cc",
         "init_first_stage_defaults",
     ],
-    cflags: ["-DMICRODROID=1"],
+    cflags: [
+        "-DMICRODROID=1",
+        "-UWORLD_WRITABLE_KMSG",
+        "-DWORLD_WRITABLE_KMSG=1",
+    ],
     no_full_install: true,
 }
 
