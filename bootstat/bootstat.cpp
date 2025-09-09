@@ -159,9 +159,14 @@ void LogBootEvents() {
                                               static_cast<int32_t>(info->second.event),
                                               static_cast<int32_t>(event.second));
       } else {
+        int64_t value = static_cast<int64_t>(event.second);
+        // ro.boottime.init is recorded in ns, but we want to report it to
+        // statsd in ms.
+        if (name == "ro.boottime.init") {
+          value /= 1000000;
+        }
         android::util::bootstats::stats_write(static_cast<int32_t>(info->second.atom),
-                                              static_cast<int32_t>(info->second.event),
-                                              static_cast<int64_t>(event.second));
+                                              static_cast<int32_t>(info->second.event), value);
       }
     } else {
       notSupportedEvents.push_back(name);
