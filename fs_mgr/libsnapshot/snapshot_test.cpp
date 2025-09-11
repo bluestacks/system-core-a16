@@ -3033,6 +3033,15 @@ TEST_F(SnapshotUpdateTest, MergeRespectsSourceUblkDisabled) {
     ASSERT_TRUE(android::base::SetProperty("snapuserd.test.force_dm_user", previous_dm_user_mode));
 }
 
+TEST_F(SnapshotUpdateTest, NoSpaceSimulation) {
+    fetcher_->SetProperty("persist.virtual_ab.testing.no_snapshot_space", "true");
+    ASSERT_TRUE(sm->BeginUpdate());
+
+    auto ret = sm->CreateUpdateSnapshots(manifest_);
+    ASSERT_FALSE(ret.is_ok());
+    ASSERT_EQ(ret.error_code(), Return::ErrorCode::NO_SPACE);
+}
+
 class FlashAfterUpdateTest : public SnapshotUpdateTest,
                              public WithParamInterface<std::tuple<uint32_t, bool>> {
   public:
