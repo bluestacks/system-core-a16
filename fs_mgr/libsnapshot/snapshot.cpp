@@ -4213,6 +4213,11 @@ Return SnapshotManager::CreateUpdateSnapshotsInternal(
                 return Return::Error();
             }
 
+            if (GetDebugFlag("no_snapshot_space")) {
+                LOG(ERROR) << "Forcing NO_SPACE error during snapshot creation for testing";
+                return Return::NoSpace(cow_creator_ret->snapshot_status.cow_partition_size());
+            }
+
             if (!target_metadata->ResizePartition(
                         cow_partition, cow_creator_ret->snapshot_status.cow_partition_size(),
                         cow_creator_ret->cow_partition_usable_regions)) {
