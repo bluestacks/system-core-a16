@@ -124,10 +124,35 @@ static std::string get_ashmem_device_path() {
     return "/dev/ashmem" + boot_id;
 }
 
+static bool __init_ashmem_rdev() {
+    const std::string ashmem_device_path = get_ashmem_device_path();
+    if (ashmem_device_path.empty()) {
+        return false;
+    }
+
+    struct stat st;
+    if (TEMP_FAILURE_RETRY(stat(ashmem_device_path.c_str(), &st)) == -1) {
+        ALOGE("Unable to stat ashmem device: %m");
+        return false;
+    }
+    if (!S_ISCHR(st.st_mode)) {
+        ALOGE("ashmem device is not a character device");
+        errno = ENOTTY;
+        return false;
+    }
+
+    __ashmem_rdev = st.st_rdev;
+    return true;
+}
+
 int __ashmem_open() {
     static const std::string ashmem_device_path = get_ashmem_device_path();
 
     if (ashmem_device_path.empty()) {
+        return -1;
+    }
+
+    if (__ashmem_rdev == 0 && !__init_ashmem_rdev()) {
         return -1;
     }
 
@@ -137,34 +162,15 @@ int __ashmem_open() {
         return -1;
     }
 
-    struct stat st;
-    if (TEMP_FAILURE_RETRY(fstat(fd, &st)) == -1) {
-        ALOGE("Unable to fstat ashmem device: %m");
-        return -1;
-    }
-    if (!S_ISCHR(st.st_mode) || !st.st_rdev) {
-        ALOGE("ashmem device is not a character device");
-        errno = ENOTTY;
-        return -1;
-    }
-
-    __ashmem_rdev = st.st_rdev;
     return fd.release();
-}
-
-static void __init_ashmem_rdev() {
-    // If __ashmem_rdev hasn't been initialized yet,
-    // create an ashmem fd for that side effect.
-    // This shouldn't happen if all ashmem fds come from us,
-    // but we know that the libcutils code has been copy & pasted.
-    // (Chrome, for example, contains a copy of an old version.)
-    android::base::unique_fd fd(__ashmem_open());
 }
 
 /* Make sure file descriptor references ashmem, negative number means false */
 // TODO: return bool
 static int __ashmem_is_ashmem(int fd, bool fatal) {
-    if (__ashmem_rdev == 0) __init_ashmem_rdev();
+    if (__ashmem_rdev == 0 && !__init_ashmem_rdev()) {
+        return -1;
+    }
 
     struct stat st;
     if (fstat(fd, &st) == -1) return -1;
