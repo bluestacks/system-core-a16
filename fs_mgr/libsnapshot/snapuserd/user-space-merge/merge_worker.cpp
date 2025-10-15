@@ -239,11 +239,6 @@ bool MergeWorker::MergeOrderedOpsAsync() {
             return false;
         }
 
-        std::optional<std::lock_guard<std::mutex>> buffer_lock;
-        // Acquire the buffer lock at this point so that RA thread
-        // doesn't step into this buffer. See b/377819507
-        buffer_lock.emplace(snapuserd_->GetBufferLock());
-
         snapuserd_->SetMergeInProgress(ra_block_index_);
 
         loff_t offset = 0;
@@ -399,9 +394,6 @@ bool MergeWorker::MergeOrderedOpsAsync() {
         // Mark the block as merge complete
         snapuserd_->SetMergeCompleted(ra_block_index_);
 
-        // Release the buffer lock
-        buffer_lock.reset();
-
         // Notify RA thread that the merge thread is ready to merge the next
         // window
         snapuserd_->NotifyRAForMergeReady();
@@ -433,11 +425,6 @@ bool MergeWorker::MergeOrderedOps() {
             snapuserd_->SetMergeFailed(ra_block_index_);
             return false;
         }
-
-        std::optional<std::lock_guard<std::mutex>> buffer_lock;
-        // Acquire the buffer lock at this point so that RA thread
-        // doesn't step into this buffer. See b/377819507
-        buffer_lock.emplace(snapuserd_->GetBufferLock());
 
         snapuserd_->SetMergeInProgress(ra_block_index_);
 
@@ -494,9 +481,6 @@ bool MergeWorker::MergeOrderedOps() {
         SNAP_LOG(DEBUG) << "Block commit of size: " << snapuserd_->GetTotalBlocksToMerge();
         // Mark the block as merge complete
         snapuserd_->SetMergeCompleted(ra_block_index_);
-
-        // Release the buffer lock
-        buffer_lock.reset();
 
         // Notify RA thread that the merge thread is ready to merge the next
         // window
