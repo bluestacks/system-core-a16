@@ -96,3 +96,10 @@ subsystem vfio
 /sys/devices/system/cpu/cpu*   cpufreq/scaling_min_freq   0664  system system
 /sys/devices/virtual/misc/uhid/*/leds/* brightness   0664  system system
 /sys/devices/virtual/misc/uhid/*/leds/* multi_intensity   0664  system system
+
+# BlueStacks device permissions (ported from A13 ueventd.rc)
+/dev/bst_ime            0666    root    root
+/dev/bstpgaipc          0666    root    root
+/dev/bstvmsg            0666    root    root
+/dev/vboxuser           0666    root    root
+/dev/hvmem              0660    system  system
