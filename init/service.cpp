@@ -77,6 +77,12 @@ namespace android {
 namespace init {
 
 static Result<std::string> ComputeContextFromExecutable(const std::string& service_path) {
+    // BlueStacks(baklava bringup): align A13, skip domain-transition check under permissive;
+    // return "skip" instead of Error, else unlabeled /system files block all services (incl. apexd-bootstrap).
+    if (!is_selinux_enabled() || security_getenforce() == 0) {
+        return "skip";
+    }
+
     std::string computed_context;
 
     char* raw_con = nullptr;
@@ -100,6 +106,12 @@ static Result<std::string> ComputeContextFromExecutable(const std::string& servi
         free(new_con);
     }
     if (rc == 0 && computed_context == mycon.get()) {
+#if defined(__ANDROID__)
+        LOG(WARNING) << "File " << service_path << "(labeled \"" << filecon.get()
+                     << "\") has incorrect label or no domain transition from " << mycon.get()
+                     << " to another SELinux domain defined.";
+        return "skip";
+#else
         return Error() << "File " << service_path << "(labeled \"" << filecon.get()
                        << "\") has incorrect label or no domain transition from " << mycon.get()
                        << " to another SELinux domain defined. Have you configured your "
@@ -107,6 +119,7 @@ static Result<std::string> ComputeContextFromExecutable(const std::string& servi
                           "device-policy#label_new_services_and_address_denials. Note: this "
                           "error shows up even in permissive mode in order to make auditing "
                           "denials possible.";
+#endif
     }
     if (rc < 0) {
         return Error() << "Could not get process context";

@@ -95,7 +95,10 @@ Result<uid_t> DecodeUid(const std::string& name) {
  */
 Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool should_listen,
                          mode_t perm, uid_t uid, gid_t gid, const std::string& socketcon) {
-    if (!socketcon.empty()) {
+    // BlueStacks(baklava bringup): disable socket SELinux context (align A13).
+    // service.cpp returns placeholder "skip" under permissive, which is not a valid context;
+    // setsockcreatecon("skip") would EINVAL, breaking logd/lmkd/tombstoned sockets.
+    if (false) {
         if (setsockcreatecon(socketcon.c_str()) == -1) {
             return ErrnoError() << "setsockcreatecon(\"" << socketcon << "\") failed";
         }
@@ -106,7 +109,7 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool 
         return ErrnoError() << "Failed to open socket '" << name << "'";
     }
 
-    if (!socketcon.empty()) setsockcreatecon(nullptr);
+    if (false) setsockcreatecon(nullptr);  // BlueStacks: same as above (align A13)
 
     struct sockaddr_un addr;
     memset(&addr, 0 , sizeof(addr));
@@ -175,9 +178,14 @@ Result<std::string> ReadFile(const std::string& path) {
     if (fstat(fd.get(), &sb) == -1) {
         return ErrnoError() << "fstat failed()";
     }
+    // BlueStacks(baklava bringup): align A13, disable this check. BST rootfs ships many files
+    // (build.prop / *.rc / modules.* etc.) with group/others writable bits; without this all
+    // .rc files would be skipped as "insecure", so no service gets loaded.
+    /*
     if ((sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
         return Error() << "Skipping insecure file";
     }
+    */
 
     std::string content;
     if (!android::base::ReadFdToString(fd, &content)) {

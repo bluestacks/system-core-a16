@@ -99,6 +99,9 @@ namespace {
 
 enum EnforcingStatus { SELINUX_PERMISSIVE, SELINUX_ENFORCING };
 
+// BlueStacks(baklava bringup): IsEnforcing() is forced to return false below; this function
+// is now unused, comment it out to avoid -Werror=unused-function.
+/*
 EnforcingStatus StatusFromProperty() {
     std::string value;
     if (android::fs_mgr::GetKernelCmdline("androidboot.selinux", &value) && value == "permissive") {
@@ -109,12 +112,19 @@ EnforcingStatus StatusFromProperty() {
     }
     return SELINUX_ENFORCING;
 }
+*/
 
 bool IsEnforcing() {
+    // BlueStacks(baklava bringup): force SELinux permissive (align A13). BST rootfs is
+    // pre-mounted by init.sh and lacks file_contexts labels; under enforcing, init re-exec
+    // of /system/bin/init would be denied (execv: Permission denied). Return false here.
+    return false;
+    /*
     if (ALLOW_PERMISSIVE_SELINUX) {
         return StatusFromProperty() == SELINUX_ENFORCING;
     }
     return true;
+    */
 }
 
 bool ReadFirstLine(const char* file, std::string* line) {
@@ -815,7 +825,11 @@ int SetupSelinux(char** argv) {
     // but other file systems do.  In particular, this is needed for ramdisks such as the
     // recovery image for A/B devices.
     if (selinux_android_restorecon("/system/bin/init", 0) == -1) {
-        PLOG(FATAL) << "restorecon failed of /system/bin/init failed";
+        // BlueStacks(baklava bringup): BST /system is read-only and SELinux is forced
+        // permissive, so init domain transition does not depend on this relabel. If the
+        // /system/bin/init label mismatches file_contexts, restorecon writes xattr -> EROFS;
+        // downgrade to non-fatal to avoid SetupSelinux abort + reboot.
+        PLOG(ERROR) << "restorecon of /system/bin/init failed (ignored for BlueStacks ro /system)";
     }
 
     setenv(kEnvSelinuxStartedAt, std::to_string(start_time.time_since_epoch().count()).c_str(), 1);
