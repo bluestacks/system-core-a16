@@ -354,7 +354,9 @@ int FirstStageMain(int argc, char** argv) {
     CHECKCALL(mkdir("/dev/dm-user", 0755));
     CHECKCALL(mount("devpts", "/dev/pts", "devpts", 0, NULL));
 #define MAKE_STR(x) __STRING(x)
-    CHECKCALL(mount("proc", "/proc", "proc", 0, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
+    // BlueStacks(baklava bringup): BST init.sh mounts /proc before exec'ing /init, so
+    // remount with MS_REMOUNT here (a fresh mount returns EBUSY and fatally aborts first stage).
+    CHECKCALL(mount("proc", "/proc", "proc", MS_REMOUNT, "hidepid=2,gid=" MAKE_STR(AID_READPROC)));
 #undef MAKE_STR
     std::string cmdline;
     android::base::ReadFileToString("/proc/cmdline", &cmdline);
@@ -364,7 +366,8 @@ int FirstStageMain(int argc, char** argv) {
     android::base::ReadFileToString("/proc/bootconfig", &bootconfig);
     gid_t groups[] = {AID_READPROC};
     CHECKCALL(setgroups(arraysize(groups), groups));
-    CHECKCALL(mount("sysfs", "/sys", "sysfs", 0, NULL));
+    // BlueStacks(baklava bringup): /sys already mounted by init.sh; use MS_REMOUNT to avoid EBUSY.
+    CHECKCALL(mount("sysfs", "/sys", "sysfs", MS_REMOUNT, NULL));
     CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));
 
     CHECKCALL(mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11)));
