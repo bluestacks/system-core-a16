@@ -1170,12 +1170,17 @@ void PropertyLoadBootDefaults() {
     // Order matters here. The more the partition is specific to a product, the higher its
     // precedence is.
     LoadPropertiesFromSecondStageRes(&properties);
-
-    // system should have build.prop, unlike the other partitions
-    if (auto res = load_properties_from_file("/system/build.prop", nullptr, &properties);
-        !res.ok()) {
-        LOG(WARNING) << res.error();
+    /* BS-A16: load /data/.bluestacks.prop first to override build.prop (device disguise,
+     * e.g. ro.product.* = Samsung). Ported from A13 property_service.cpp (commit 133a180f8).
+     * If the file is absent/fails, fall back to /system/build.prop. */
+    if (!load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties).ok()) {
+        // system should have build.prop, unlike the other partitions
+        if (auto res = load_properties_from_file("/system/build.prop", nullptr, &properties);
+            !res.ok()) {
+            LOG(WARNING) << res.error();
+        }
     }
+    load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
 
     load_properties_from_partition("system_ext", /* support_legacy_path_until */ 30);
     load_properties_from_file("/system_dlkm/etc/build.prop", nullptr, &properties);
