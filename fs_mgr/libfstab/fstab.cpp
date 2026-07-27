@@ -568,24 +568,12 @@ std::string GetFstabPath() {
     if (InRecovery()) {
         return GetRecoveryFstabPath();
     }
-    for (const char* prop : {"fstab_suffix", "hardware", "hardware.platform"}) {
-        std::string suffix;
-
-        if (!fs_mgr_get_boot_config(prop, &suffix)) continue;
-
-        for (const char* prefix : {// late-boot/post-boot locations
-                                   "/odm/etc/fstab.", "/vendor/etc/fstab.",
-                                   // early boot locations
-                                   "/system/etc/fstab.", "/first_stage_ramdisk/system/etc/fstab.",
-                                   "/fstab.", "/first_stage_ramdisk/fstab."}) {
-            std::string fstab_path = prefix + suffix;
-            if (access(fstab_path.c_str(), F_OK) == 0) {
-                return fstab_path;
-            }
-        }
-    }
-
-    return "";
+    /* [BST] Ported from A13: the guest kernel cmdline lacks androidboot.fstab_suffix /
+     * hardware, so the standard bootconfig lookup cannot locate the fstab. Hardcode
+     * /fstab.baklava (A13 hardcoded /fstab.tiramisu). The fstab.baklava entry is a
+     * first_stage_mount placeholder -> mount skipped as empty -> "First stage mount
+     * skipped"; the real mounts are done by BST init.sh preload. */
+    return "/fstab.baklava";
 }
 
 bool ParseFstabFromString(const std::string& fstab_str, bool proc_mounts, Fstab* fstab_out) {
