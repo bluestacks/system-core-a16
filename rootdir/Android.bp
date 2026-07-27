@@ -16,8 +16,18 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
+// BlueStacks: boringssl self-test rc disabled.
+//
+// BlueStacks: disable boringssl self-test rc (align A13/Tiramisu64 which does not install
+// system-side boringssl rc at all).
+//
+// The BST target ships no usable boringssl_self_test32; the init.boringssl.zygote64_32.rc
+// branch exec_starts it, which fails and triggers reboot_on_failure
+// `reboot,boringssl-self-check-failed` -> full boot failure. Disable both boringssl rc
+// prebuilts and drop them from init.rc required list.
 prebuilt_etc {
     name: "init.boringssl.zygote64_32.rc",
+    enabled: false,
     src: "init.boringssl.zygote64_32.rc",
     sub_dir: "init/hw",
     symlinks: [
@@ -28,6 +38,7 @@ prebuilt_etc {
 
 prebuilt_etc {
     name: "init.boringssl.zygote64.rc",
+    enabled: false,
     src: "init.boringssl.zygote64.rc",
     sub_dir: "init/hw",
 }
@@ -38,8 +49,6 @@ prebuilt_etc {
     sub_dir: "init/hw",
     required: [
         "platform-bootclasspath",
-        "init.boringssl.zygote64.rc",
-        "init.boringssl.zygote64_32.rc",
         "init-perfetto.rc",
     ],
 }
