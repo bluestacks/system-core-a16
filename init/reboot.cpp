@@ -144,6 +144,12 @@ class MountEntry {
         }
     }
 
+    bool RemountRO() {
+        int ret = mount(mnt_fsname_.c_str(), mnt_dir_.c_str(), mnt_type_.c_str(),
+                        MS_REMOUNT | MS_RDONLY, NULL);
+        return ret == 0;
+    }
+
     static bool IsBlockDevice(const struct mntent& mntent) {
         return android::base::StartsWith(mntent.mnt_fsname, "/dev/block");
     }
@@ -303,7 +309,7 @@ static UmountStat TryUmountPartitions(bool force) {
     }
 
     for (auto& entry : block_devices) {
-        if (!entry.Umount(force)) unmount_success = false;
+        if (!entry.RemountRO() && !entry.Umount(force)) unmount_success = false;
     }
 
     if (unmount_success) {
@@ -970,6 +976,15 @@ static void DoReboot(unsigned int cmd, const std::string& reason,
         LOG(INFO) << "vold not running, skipping vold shutdown";
     }
     // logcat stopped here
+    // [BST] Create marker file for graceful shutdown check on next boot
+    int fd_bst = open("/data/.bstshutdown_sync", O_RDWR | O_CREAT | O_APPEND, 0660);
+    if (fd_bst < 0)
+        LOG(ERROR) << "error in creating .bstshutdown_sync file, errno: " << strerror(errno);
+    else {
+        close(fd_bst);
+        LOG(INFO) << ".bstshutdown_sync file created";
+    }
+
     pids = StopServices(kDebuggingServices, false /* SIGKILL */);
     WaitAndLogViolations(pids, 0ms);
     // 4. sync, and try umount

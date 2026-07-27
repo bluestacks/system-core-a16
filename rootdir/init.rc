@@ -1339,3 +1339,146 @@ on property:sys.snapshotctl.map=requested
 on property:sys.snapshotctl.unmap=requested
     exec - root root system -- /system/bin/snapshotctl unmap
     setprop sys.snapshotctl.unmap "finished"
+
+# [BST] BlueStacks services and property triggers
+
+service bstshutdown_core /system/bin/logwrapper /system/bin/bstshutdown_core
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.start_shutdown=1
+    start bstshutdown_core
+
+service proper_shutdown /system/bin/logwrapper /system/bin/proper_shutdown
+    class main
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.fix_corruptfiles=1
+    start proper_shutdown
+
+service mountsf /system/bin/logwrapper /system/bin/mountsf
+    user root
+    group root
+    disabled
+    oneshot
+
+service imeservice /system/bin/logwrapper /system/bin/bstime
+    class main
+    user root
+    group root readproc
+    disabled
+    oneshot
+
+service logcat_redirect /system/bin/logwrapper /system/bin/logcat_redirection
+    class core
+    user root
+    group log root
+    disabled
+    oneshot
+    writepid /dev/cpuset/system-background/tasks
+
+service bindmount /system/bin/logwrapper /system/bin/bindmount
+    user root
+    group root
+    disabled
+    oneshot
+
+service airplane_mode /system/bin/logwrapper /system/bin/airplane_mode
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.enable_logcat_redirection=1
+    start logcat_redirect
+
+on property:bst.config.mountsf=1
+    start mountsf
+
+on property:bst.config.ime_listenerport=*
+    restart imeservice
+
+on property:bst.config.ime_listenerport=0
+    stop imeservice
+
+on property:bst.config.bindmount=*
+    start bindmount
+
+on property:bst.airplane_mode_active=*
+    start airplane_mode
+# [BST] BlueStacks services and property triggers
+
+service bstshutdown_core /system/bin/logwrapper /system/bin/bstshutdown_core
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.start_shutdown=1
+    start bstshutdown_core
+
+service proper_shutdown /system/bin/logwrapper /system/bin/proper_shutdown
+    class main
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.fix_corruptfiles=1
+    start proper_shutdown
+
+service mountsf /system/bin/logwrapper /system/bin/mountsf
+    user root
+    group root
+    disabled
+    oneshot
+
+service imeservice /system/bin/logwrapper /system/bin/bstime
+    class main
+    user root
+    group root readproc
+    disabled
+    oneshot
+
+service logcat_redirect /system/bin/logwrapper /system/bin/logcat_redirection
+    class core
+    user root
+    group log root
+    disabled
+    oneshot
+    writepid /dev/cpuset/system-background/tasks
+
+service bindmount /system/bin/logwrapper /system/bin/bindmount
+    user root
+    group root
+    disabled
+    oneshot
+
+service airplane_mode /system/bin/logwrapper /system/bin/airplane_mode
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.enable_logcat_redirection=1
+    start logcat_redirect
+
+on property:bst.config.mountsf=1
+    start mountsf
+
+on property:bst.config.ime_listenerport=*
+    restart imeservice
+
+on property:bst.config.ime_listenerport=0
+    stop imeservice
+
+on property:bst.config.bindmount=*
+    start bindmount
+
+on property:bst.airplane_mode_active=*
+    start airplane_mode
