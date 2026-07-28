@@ -57,6 +57,13 @@ static void ControlDefaultServices(bool start) {
         for (auto it = services.crbegin(); it != services.crend(); ++it) {
             ControlService(false, *it);
         }
+        // A16DBG:P2:MECH BST: reset state on stop (a13)
+        android::base::SetProperty("ctl.stop", "appstatsd");
+        android::base::SetProperty("bst.config.boot_completed", "0");
+        android::base::SetProperty("bst.config.pm_ready", "0");
+        android::base::SetProperty("bst.config.screen_enabled", "0");
+        android::base::SetProperty("bst.config.top_package_name", "");
+        android::base::SetProperty("bst.config.top_activity_name", "");
     }
 }
 

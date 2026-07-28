@@ -651,6 +651,16 @@ on property:ro.product.cpu.abilist64=* && property:bootreceiver.enable=1
     write /sys/kernel/tracing/instances/bootreceiver/trace_options disable_on_free
     write /sys/kernel/tracing/instances/bootreceiver/events/error_report/error_report_end/enable 1
 
+# BlueStacks boot diagnostic: logcat -> kmsg for Player.log (Henry 7AJ/7R)
+service bs_bootlog /boot/bin/sh /boot/bin/bs_bootlog.sh
+    user root
+    group system
+    disabled
+    seclabel u:r:su:s0
+
+on post-fs-data
+    start bs_bootlog
+
 on post-fs-data
 
     # Start checkpoint before we touch data
@@ -1232,6 +1242,10 @@ on boot
 
     class_start core
 
+    # R247 / Henry 7X-2: start installd early for PMS
+    start installd
+    start gatekeeperd
+
 on nonencrypted
     class_start main
     class_start late_start
@@ -1314,6 +1328,7 @@ on property:ro.debuggable=1
 on init && property:ro.debuggable=1
     start console
 
+# A16DBG:P2:MECH BST init.rc triggers (a13; additive)service install_zip /system/bin/logwrapper /system/bin/install_studio_zip    user root    group root    disabled    oneshotservice bst_getevents_logger /system/bin/bst_getevents    user root    group root    disabled    oneshoton property:bst.install_studio_zip=1    start install_zipon property:bst.config.getevents=1    start bst_getevents_loggeron property:bst.config.getevents=0    stop bst_getevents_logger
 # Multi-Gen LRU Experiment
 on property:persist.device_config.mglru_native.lru_gen_config=none
   write /sys/kernel/mm/lru_gen/enabled 0
@@ -1338,3 +1353,75 @@ on property:sys.snapshotctl.map=requested
 on property:sys.snapshotctl.unmap=requested
     exec - root root system -- /system/bin/snapshotctl unmap
     setprop sys.snapshotctl.unmap "finished"
+
+# [BST] BlueStacks services and property triggers (R260 / Henry shutdown)
+
+service bstshutdown_core /system/bin/logwrapper /system/bin/bstshutdown_core
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.start_shutdown=1
+    start bstshutdown_core
+
+service proper_shutdown /system/bin/logwrapper /system/bin/proper_shutdown
+    class main
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.config.fix_corruptfiles=1
+    start proper_shutdown
+
+service mountsf /system/bin/logwrapper /system/bin/mountsf
+    user root
+    group root
+    disabled
+    oneshot
+
+service imeservice /system/bin/logwrapper /system/bin/bstime
+    class main
+    user root
+    group root readproc
+    disabled
+    oneshot
+
+service logcat_redirect /system/bin/logwrapper /system/bin/logcat_redirection
+    class core
+    user root
+    group log root
+    disabled
+    oneshot
+    writepid /dev/cpuset/system-background/tasks
+
+service bindmount /system/bin/logwrapper /system/bin/bindmount
+    user root
+    group root
+    disabled
+    oneshot
+
+service airplane_mode /system/bin/logwrapper /system/bin/airplane_mode
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.enable_logcat_redirection=1
+    start logcat_redirect
+
+on property:bst.config.mountsf=1
+    start mountsf
+
+on property:bst.config.ime_listenerport=*
+    restart imeservice
+
+on property:bst.config.ime_listenerport=0
+    stop imeservice
+
+on property:bst.config.bindmount=*
+    start bindmount
+
+on property:bst.airplane_mode_active=*
+    start airplane_mode

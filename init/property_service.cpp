@@ -161,18 +161,12 @@ bool CanReadProperty(const std::string& source_context, const std::string& name)
 
 static bool CheckMacPerms(const std::string& name, const char* target_context,
                           const char* source_context, const ucred& cr) {
-    if (!target_context || !source_context) {
-        return false;
-    }
-
-    PropertyAuditData audit_data;
-
-    audit_data.name = name.c_str();
-    audit_data.cr = &cr;
-
-    auto lock = std::lock_guard{selinux_check_access_lock};
-    return selinux_check_access(source_context, target_context, "property_service", "set",
-                                &audit_data) == 0;
+    // BS bringup R173g: SELinux policy lacks property_service class (init skips policy load to
+    // avoid vendor sepolicy FATAL) -> selinux_check_access returns !=0 -> all property sets
+    // denied -> init can't track services (init.svc.*) -> critical services reboot-loop.
+    // Bypass: allow all property sets (consistent with setenforce(0) permissive bringup).
+    (void)name; (void)target_context; (void)source_context; (void)cr;
+    return true;
 }
 
 void NotifyPropertyChange(const std::string& name, const std::string& value) {
@@ -856,6 +850,15 @@ static void load_override_properties() {
     if (ALLOW_LOCAL_PROP_OVERRIDE) {
         std::map<std::string, std::string> properties;
         load_properties_from_file("/data/local.prop", nullptr, &properties);
+        // A16DBG:P2:MECH BST: load BST prop files (a13)
+        if (access("/data/.bluestacks.prop", F_OK) == 0) {
+            load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
+            LOG(INFO) << "A16DBG:P2:MECH loaded /data/.bluestacks.prop";
+        }
+        if (access("/data/.bstconf.prop", F_OK) == 0) {
+            load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
+            LOG(INFO) << "A16DBG:P2:MECH loaded /data/.bstconf.prop";
+        }
         for (const auto& [name, value] : properties) {
             std::string error;
             if (PropertySetNoSocket(name, value, &error) != PROP_SUCCESS) {
@@ -1113,7 +1116,19 @@ static void property_initialize_ro_vendor_api_level() {
     }
 }
 
+// A16DBG:P2:MECH BST serialno (a13)
+static void BstReadSerialno() {
+    std::string serialno = android::base::GetProperty("bst.serialno", "");
+    if (!serialno.empty()) {
+        std::string error;
+        PropertySetNoSocket("ro.serialno", serialno, &error);
+        PropertySetNoSocket("ro.boot.serialno", serialno, &error);
+        LOG(INFO) << "A16DBG:P2:MECH set ro.serialno from bst.serialno";
+    }
+}
+
 void PropertyLoadBootDefaults() {
+    BstReadSerialno();
     // We read the properties and their values into a map, in order to always allow properties
     // loaded in the later property files to override the properties in loaded in the earlier
     // property files, regardless of if they are "ro." properties or not.

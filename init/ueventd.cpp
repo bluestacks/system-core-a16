@@ -164,6 +164,7 @@ void main_loop(const UeventListener& uevent_listener,
                const std::vector<std::shared_ptr<UeventHandler>>& uevent_handlers) {
     uevent_listener.Poll([&uevent_handlers](const Uevent& uevent) {
         for (auto& uevent_handler : uevent_handlers) {
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: post-coldboot (handlers ColdbootDone)\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
             uevent_handler->HandleUevent(uevent);
         }
         return ListenerAction::kContinue;
@@ -197,6 +198,8 @@ void parallel_main_loop(const UeventListener& uevent_listener,
 }
 
 int ueventd_main(int argc, char** argv) {
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
+      if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd_main entered (R173 diag)\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
     /*
      * init sets the umask to 077 for forked processes. We need to
      * create files with exact permissions, without modification by
@@ -207,13 +210,16 @@ int ueventd_main(int argc, char** argv) {
     android::base::InitLogging(argv, &android::base::KernelLogger);
 
     LOG(INFO) << "ueventd started!";
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: post-started-log\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
 
     SelinuxSetupKernelLogging();
     SelabelInitialize();
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: post-selabel\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
 
     std::vector<std::shared_ptr<UeventHandler>> uevent_handlers;
 
     auto ueventd_configuration = GetConfiguration();
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: post-config (GetConfiguration)\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
 
     UeventListener uevent_listener(ueventd_configuration.uevent_socket_rcvbuf_size);
 
@@ -247,6 +253,7 @@ int ueventd_main(int argc, char** argv) {
         ColdBoot cold_boot(uevent_listener, uevent_handlers,
                            ueventd_configuration.enable_parallel_restorecon,
                            ueventd_configuration.parallel_restorecon_dirs);
+    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: pre-coldboot-run\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
         cold_boot.Run();
     }
 

@@ -565,7 +565,10 @@ static void doLogValues(const HealthInfo& props, const struct healthd_config& he
              props.chargerAcOnline ? "a" : "", props.chargerUsbOnline ? "u" : "",
              props.chargerWirelessOnline ? "w" : "", props.chargerDockOnline ? "d" : "");
 
-    KLOG_WARNING(LOG_TAG, "%s\n", dmesgline);
+    // A16DBG:P2:MECH BST: gate dmesg spam + set klog level (a13)
+    if (false)
+        KLOG_WARNING(LOG_TAG, "%s\n", dmesgline);
+    klog_set_level(3);
 }
 
 void BatteryMonitor::logValues(const HealthInfo_2_1& health_info,

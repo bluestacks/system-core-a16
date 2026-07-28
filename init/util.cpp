@@ -95,7 +95,7 @@ Result<uid_t> DecodeUid(const std::string& name) {
  */
 Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool should_listen,
                          mode_t perm, uid_t uid, gid_t gid, const std::string& socketcon) {
-    if (!socketcon.empty()) {
+    if (false && !socketcon.empty()) {
         if (setsockcreatecon(socketcon.c_str()) == -1) {
             return ErrnoError() << "setsockcreatecon(\"" << socketcon << "\") failed";
         }
@@ -106,7 +106,7 @@ Result<int> CreateSocket(const std::string& name, int type, bool passcred, bool 
         return ErrnoError() << "Failed to open socket '" << name << "'";
     }
 
-    if (!socketcon.empty()) setsockcreatecon(nullptr);
+    if (false && !socketcon.empty()) setsockcreatecon(nullptr);
 
     struct sockaddr_un addr;
     memset(&addr, 0 , sizeof(addr));
@@ -175,8 +175,8 @@ Result<std::string> ReadFile(const std::string& path) {
     if (fstat(fd.get(), &sb) == -1) {
         return ErrnoError() << "fstat failed()";
     }
-    if ((sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
-        return Error() << "Skipping insecure file";
+    if (false) { // BS: insecure file check disabled
+        // was: if ((sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) { return Error() << "Skipping insecure file";
     }
 
     std::string content;

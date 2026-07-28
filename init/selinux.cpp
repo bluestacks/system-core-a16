@@ -111,6 +111,10 @@ EnforcingStatus StatusFromProperty() {
 }
 
 bool IsEnforcing() {
+    // BlueStacks(baklava bringup): force SELinux permissive (consistent with A13).
+    return false;
+    return false; // BlueStacks
+    return false;
     if (ALLOW_PERMISSIVE_SELINUX) {
         return StatusFromProperty() == SELINUX_ENFORCING;
     }
@@ -552,14 +556,13 @@ int SelinuxGetVendorAndroidVersion() {
 
         std::string version;
         if (!GetVendorMappingVersion(&version)) {
-            LOG(FATAL) << "Could not read vendor SELinux version";
+            LOG(ERROR) << "Could not read vendor SELinux version (BS: default)"; return __ANDROID_API_FUTURE__;;
         }
 
         int major_version;
         std::string major_version_str(version, 0, version.find('.'));
         if (!ParseInt(major_version_str, &major_version)) {
-            PLOG(FATAL) << "Failed to parse the vendor sepolicy major version "
-                        << major_version_str;
+            PLOG(ERROR) << "Failed to parse vendor sepolicy version (BS: default)"; return __ANDROID_API_FUTURE__;
         }
 
         return major_version;
@@ -643,7 +646,7 @@ static void LoadSelinuxPolicy(std::string& policy) {
 
     set_selinuxmnt("/sys/fs/selinux");
     if (security_load_policy(policy.data(), policy.size()) < 0) {
-        PLOG(FATAL) << "SELinux:  Could not load policy";
+        PLOG(ERROR) << "SELinux: Could not load policy (BS: skip)";
     }
 }
 
@@ -815,7 +818,7 @@ int SetupSelinux(char** argv) {
     // but other file systems do.  In particular, this is needed for ramdisks such as the
     // recovery image for A/B devices.
     if (selinux_android_restorecon("/system/bin/init", 0) == -1) {
-        PLOG(FATAL) << "restorecon failed of /system/bin/init failed";
+        PLOG(ERROR) << "restorecon of /system/bin/init failed (ignored for BlueStacks ro /system)";
     }
 
     setenv(kEnvSelinuxStartedAt, std::to_string(start_time.time_since_epoch().count()).c_str(), 1);

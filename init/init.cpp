@@ -1045,6 +1045,65 @@ static void StartSecondStageBootMonitor(int timeout_sec) {
     monitor_thread.detach();
 }
 
+
+// [BST] Copy the right cpuinfo_<cores> file to cpuinfo
+static void copy_file(char* src, char* dest) {
+    FILE *fptr1, *fptr2;
+    char c;
+    fptr1 = fopen(src, "r");
+    if (fptr1 == NULL) {
+        LOG(ERROR) << "Cannot open file " << src;
+        return;
+    }
+    fptr2 = fopen(dest, "w");
+    if (fptr2 == NULL) {
+        LOG(ERROR) << "Cannot open file " << dest;
+        fclose(fptr1);
+        return;
+    }
+    c = fgetc(fptr1);
+    while (c != EOF) {
+        fputc(c, fptr2);
+        c = fgetc(fptr1);
+    }
+    fclose(fptr1);
+    fclose(fptr2);
+}
+
+static void copy_cpuinfo_file() {
+    long nop = sysconf(_SC_NPROCESSORS_ONLN);
+    char cpuinfo_path[1024];
+    char cpuinfo_path_main[1024];
+#if defined(__aarch64__) || defined(__x86_64__)
+    char cpuinfo_path64[1024];
+    char cpuinfo_path_main64[1024];
+    snprintf(cpuinfo_path64, sizeof(cpuinfo_path64), "/data/downloads/.oh/cpuinfo/arm64/cpuinfo_%ld", nop);
+    snprintf(cpuinfo_path_main64, sizeof(cpuinfo_path_main64), "/data/downloads/.oh/cpuinfo/arm64/cpuinfo");
+    copy_file(cpuinfo_path64, cpuinfo_path_main64);
+#endif
+    snprintf(cpuinfo_path, sizeof(cpuinfo_path), "/data/downloads/.oh/cpuinfo/arm/cpuinfo_%ld", nop);
+    snprintf(cpuinfo_path_main, sizeof(cpuinfo_path_main), "/data/downloads/.oh/cpuinfo/arm/cpuinfo");
+    copy_file(cpuinfo_path, cpuinfo_path_main);
+}
+
+// [BST] Check if last shutdown was graceful. If not, trigger proper_shutdown to fix corrupt files
+static void check_status_of_last_boot() {
+    const char *fname = "/data/.bstshutdown_sync";
+    const char *packagesxml = "/data/system/packages.xml";
+    if (access(packagesxml, F_OK) == 0) {
+        if (access(fname, F_OK) == 0) {
+            if (remove(fname) != 0)
+                LOG(INFO) << "Unable to delete : " << fname;
+            return;
+        } else {
+            LOG(INFO) << "last shutdown was not graceful as file does not exist, setting prop fix_corruptfiles";
+            SetProperty("bst.config.fix_corruptfiles", "1");
+        }
+    } else {
+        LOG(INFO) << "No packages.xml looks like first boot! Don't run fixcorruptfiles";
+    }
+}
+
 int SecondStageMain(int argc, char** argv) {
     if (REBOOT_BOOTLOADER_ON_PANIC) {
         InstallRebootSignalHandlers();
@@ -1109,6 +1168,9 @@ int SecondStageMain(int argc, char** argv) {
 
     // Umount second stage resources after property service has read the .prop files.
     UmountSecondStageRes();
+
+    // [BST] Copying the right cpuinfo_<cores> file to cpuinfo
+    copy_cpuinfo_file();
 
     // Umount the debug ramdisk after property service has read the .prop files when it means to.
     if (load_debug_prop) {
@@ -1243,6 +1305,9 @@ int SecondStageMain(int argc, char** argv) {
 
     // Restore prio before main loop
     setpriority(PRIO_PROCESS, 0, 0);
+
+    // [BST] Check if last shutdown was graceful
+    check_status_of_last_boot();
     while (true) {
         // By default, sleep until something happens. Do not convert far_future into
         // std::chrono::milliseconds because that would trigger an overflow. The unit of boot_clock
