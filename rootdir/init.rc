@@ -1328,7 +1328,28 @@ on property:ro.debuggable=1
 on init && property:ro.debuggable=1
     start console
 
-# A16DBG:P2:MECH BST init.rc triggers (a13; additive)service install_zip /system/bin/logwrapper /system/bin/install_studio_zip    user root    group root    disabled    oneshotservice bst_getevents_logger /system/bin/bst_getevents    user root    group root    disabled    oneshoton property:bst.install_studio_zip=1    start install_zipon property:bst.config.getevents=1    start bst_getevents_loggeron property:bst.config.getevents=0    stop bst_getevents_logger
+# BlueStacks maintenance services and property triggers.
+service install_zip /system/bin/logwrapper /system/bin/install_studio_zip
+    user root
+    group root
+    disabled
+    oneshot
+
+service bst_getevents_logger /system/bin/bst_getevents
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:bst.install_studio_zip=1
+    start install_zip
+
+on property:bst.config.getevents=1
+    start bst_getevents_logger
+
+on property:bst.config.getevents=0
+    stop bst_getevents_logger
+
 # Multi-Gen LRU Experiment
 on property:persist.device_config.mglru_native.lru_gen_config=none
   write /sys/kernel/mm/lru_gen/enabled 0
