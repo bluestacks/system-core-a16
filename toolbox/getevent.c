@@ -6,7 +6,8 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/inotify.h>
-#include <sys/limits.h>
+#include <limits.h>
+#include <time.h>
 #include <sys/poll.h>
 #include <linux/input.h>
 #include <err.h>
@@ -33,9 +34,29 @@ static struct label key_value_labels[] = {
 #undef LABEL
 #undef LABEL_END
 
+#define BST_EV_ABS_AND_KEY		0x17
+
 static struct pollfd *ufds;
 static char **device_names;
 static int nfds;
+
+// Track mouse button state for multiple Mouse Devices
+struct mouse_device_state {
+    int device_index;
+    int buttons_pressed;
+    int last_x;
+    int last_y;
+    int skip_sync_event;
+};
+
+static struct mouse_device_state *mouse_devices = NULL;
+static int mouse_device_count = 0;
+
+// Event filter variables
+static int event_filter_enabled = 0;
+static uint32_t event_filter_mask = 0;
+static char **device_filter_paths = NULL;
+static int device_filter_count = 0;
 
 enum {
     PRINT_DEVICE_ERRORS     = 1U << 0,
@@ -59,6 +80,145 @@ static const char *get_label(const struct label *labels, int value)
     }
     return labels->name;
 }
+
+static int device_in_filter(const char *device)
+{
+    if (device_filter_count == 0) return 1; // no filter means allow all
+    for (int i = 0; i < device_filter_count; i++) {
+        if (strcmp(device_filter_paths[i], device) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+// Find mouse device state by device index
+static struct mouse_device_state *find_mouse_device(int device_index)
+{
+    for (int i = 0; i < mouse_device_count; i++) {
+        if (mouse_devices[i].device_index == device_index) {
+            return &mouse_devices[i];
+        }
+    }
+    return NULL;
+}
+
+// Add a mouse device to tracking
+static void add_mouse_device(int device_index)
+{
+    struct mouse_device_state *new_devices = realloc(mouse_devices,
+        sizeof(struct mouse_device_state) * (mouse_device_count + 1));
+    if (new_devices == NULL) {
+        fprintf(stderr, "out of memory for mouse device tracking\n");
+        return;
+    }
+    mouse_devices = new_devices;
+    mouse_devices[mouse_device_count].device_index = device_index;
+    mouse_devices[mouse_device_count].buttons_pressed = 0;
+    mouse_devices[mouse_device_count].last_x = -1;
+    mouse_devices[mouse_device_count].last_y = -1;
+    mouse_devices[mouse_device_count].skip_sync_event = 0;
+    mouse_device_count++;
+}
+
+// Remove a mouse device from tracking
+static void remove_mouse_device(int device_index)
+{
+    for (int i = 0; i < mouse_device_count; i++) {
+        if (mouse_devices[i].device_index == device_index) {
+            // Shift remaining devices
+            memmove(&mouse_devices[i], &mouse_devices[i + 1],
+                sizeof(struct mouse_device_state) * (mouse_device_count - i - 1));
+            mouse_device_count--;
+            struct mouse_device_state *new_devices = realloc(mouse_devices,
+                sizeof(struct mouse_device_state) * mouse_device_count);
+            if (mouse_device_count > 0 && new_devices != NULL) {
+                mouse_devices = new_devices;
+            } else if (mouse_device_count == 0) {
+                free(mouse_devices);
+                mouse_devices = NULL;
+            }
+            return;
+        }
+    }
+}
+
+// Adjust mouse device indices when a device is removed before them
+static void adjust_mouse_device_indices(int removed_index)
+{
+    for (int i = 0; i < mouse_device_count; i++) {
+        if (mouse_devices[i].device_index > removed_index) {
+            mouse_devices[i].device_index--;
+        }
+    }
+}
+
+
+static int parse_event_types(const char *arg)
+{
+    char *token, *str, *saveptr;
+    uint32_t mask = 0;
+
+    str = strdup(arg);
+    if (!str) return -1;
+
+    token = strtok_r(str, ",", &saveptr);
+    while (token != NULL) {
+        if (strcmp(token, "BST_EV_ABS_AND_KEY") == 0) {
+            mask |= (1 << BST_EV_ABS_AND_KEY);
+            mask |= (1 << EV_ABS);
+            mask |= (1 << EV_KEY);
+        }
+        else if (strcmp(token, "EV_SYN") == 0) {
+            mask |= (1 << EV_SYN);
+        } else if (strcmp(token, "EV_KEY") == 0) {
+            mask |= (1 << EV_KEY);
+        } else if (strcmp(token, "EV_REL") == 0) {
+            mask |= (1 << EV_REL);
+        } else if (strcmp(token, "EV_ABS") == 0) {
+            mask |= (1 << EV_ABS);
+        } else if (strcmp(token, "EV_MSC") == 0) {
+            mask |= (1 << EV_MSC);
+        } else if (strcmp(token, "EV_SW") == 0) {
+            mask |= (1 << EV_SW);
+        } else if (strcmp(token, "EV_LED") == 0) {
+            mask |= (1 << EV_LED);
+        } else if (strcmp(token, "EV_SND") == 0) {
+            mask |= (1 << EV_SND);
+        } else if (strcmp(token, "EV_REP") == 0) {
+            mask |= (1 << EV_REP);
+        } else if (strcmp(token, "EV_FF") == 0) {
+            mask |= (1 << EV_FF);
+        } else if (strcmp(token, "EV_PWR") == 0) {
+            mask |= (1 << EV_PWR);
+        } else if (strcmp(token, "EV_FF_STATUS") == 0) {
+            mask |= (1 << EV_FF_STATUS);
+        } else {
+            fprintf(stderr, "Unknown event type: %s\n", token);
+            free(str);
+            return -1;
+        }
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    free(str);
+    event_filter_mask = mask;
+    event_filter_enabled = 1;
+    return 0;
+}
+
+static void print_startup_timestamp(void)
+{
+    struct timespec mono, real;
+
+    clock_gettime(CLOCK_MONOTONIC, &mono);
+    clock_gettime(CLOCK_REALTIME, &real);
+
+    double mono_sec = mono.tv_sec + mono.tv_nsec / 1e9;
+    double real_sec = real.tv_sec + real.tv_nsec / 1e9;
+
+    printf("[ %10.6f] epoch_time: %.6f\n", mono_sec, real_sec);
+}
+
 
 static int print_input_props(int fd)
 {
@@ -388,6 +548,16 @@ static int open_device(const char *device, int print_flags)
         printf("  version:  %d.%d.%d\n",
                version >> 16, (version >> 8) & 0xff, version & 0xff);
 
+    ufds[nfds].fd = fd;
+    ufds[nfds].events = POLLIN;
+    device_names[nfds] = strdup(device);
+    nfds++;
+
+    // Check if this is a Mouse Device (only if event filtering is enabled)
+    if(event_filter_enabled && strcasecmp(name, "mouse device")) {
+        add_mouse_device(nfds - 1); // nfds was just incremented, so use nfds - 1
+    }
+
     if(print_flags & PRINT_POSSIBLE_EVENTS) {
         print_possible_events(fd, print_flags);
     }
@@ -398,11 +568,6 @@ static int open_device(const char *device, int print_flags)
     if(print_flags & PRINT_HID_DESCRIPTOR) {
         print_hid_descriptor(id.bustype, id.vendor, id.product);
     }
-
-    ufds[nfds].fd = fd;
-    ufds[nfds].events = POLLIN;
-    device_names[nfds] = strdup(device);
-    nfds++;
 
     return 0;
 }
@@ -415,6 +580,14 @@ int close_device(const char *device, int print_flags)
             int count = nfds - i - 1;
             if(print_flags & PRINT_DEVICE)
                 printf("remove device %d: %s\n", i, device);
+
+            // Remove mouse device tracking if this device is a mouse device
+            if(find_mouse_device(i) != NULL) {
+                remove_mouse_device(i);
+            }
+            // Adjust indices for mouse devices that come after this one
+            adjust_mouse_device_indices(i);
+
             free(device_names[i]);
             memmove(device_names + i, device_names + i + 1, sizeof(device_names[0]) * count);
             memmove(ufds + i, ufds + i + 1, sizeof(ufds[0]) * count);
@@ -487,6 +660,8 @@ static int scan_dir(const char *dirname, int print_flags)
             (de->d_name[1] == '.' && de->d_name[2] == '\0')))
             continue;
         strcpy(filename, de->d_name);
+        if (!device_in_filter(devname))
+            continue;
         open_device(devname, print_flags);
     }
     closedir(dir);
@@ -495,7 +670,7 @@ static int scan_dir(const char *dirname, int print_flags)
 
 static void usage(char *name)
 {
-    fprintf(stderr, "Usage: %s [-t] [-n] [-s switchmask] [-S] [-v [mask]] [-d] [-p] [-i] [-l] [-q] [-c count] [-r] [device]\n", name);
+    fprintf(stderr, "Usage: %s [-t] [-n] [-s switchmask] [-S] [-v [mask]] [-d] [-p] [-i] [-l] [-f event_types] [-q] [-c count] [-r] [device]\n", name);
     fprintf(stderr, "    -t: show time stamps\n");
     fprintf(stderr, "    -n: don't print newlines\n");
     fprintf(stderr, "    -s: print switch states for given bits\n");
@@ -505,9 +680,11 @@ static void usage(char *name)
     fprintf(stderr, "    -p: show possible events (errs, dev, name, pos. events)\n");
     fprintf(stderr, "    -i: show all device info and possible events\n");
     fprintf(stderr, "    -l: label event types and names in plain text\n");
+    fprintf(stderr, "    -f: filter event types (comma-separated: EV_SYN,EV_KEY,EV_REL,EV_ABS,EV_MSC,EV_SW,EV_LED,EV_SND,EV_REP,EV_FF,EV_PWR,EV_FF_STATUS,BST_EV_ABS_AND_KEY)\n");
     fprintf(stderr, "    -q: quiet (clear verbosity mask)\n");
     fprintf(stderr, "    -c: print given number of events then exit\n");
     fprintf(stderr, "    -r: print rate events are received\n");
+    fprintf(stderr, "    -D: comma-separated list of full device paths to listen (e.g. -D \"/dev/input/event2,/dev/input/event4\")\n");
 }
 
 int getevent_main(int argc, char *argv[])
@@ -534,7 +711,7 @@ int getevent_main(int argc, char *argv[])
 
     opterr = 0;
     do {
-        c = getopt(argc, argv, "tns:Sv::dpilqc:rh");
+        c = getopt(argc, argv, "tns:Sv::dpilf:c:rqhD:");
         if (c == EOF)
             break;
         switch (c) {
@@ -564,6 +741,27 @@ int getevent_main(int argc, char *argv[])
         case 'd':
             print_flags |= PRINT_HID_DESCRIPTOR;
             break;
+        case 'D': {
+            char *token, *saveptr;
+            char *list = strdup(optarg);
+            if (!list) {
+                fprintf(stderr, "Memory allocation failed for -D argument\n");
+                exit(1);
+            }
+
+            token = strtok_r(list, ",", &saveptr);
+            while (token) {
+                device_filter_paths = realloc(device_filter_paths, sizeof(char*) * (device_filter_count + 1));
+                if (!device_filter_paths) {
+                    fprintf(stderr, "Out of memory parsing -D argument\n");
+                    exit(1);
+                }
+                device_filter_paths[device_filter_count++] = strdup(token);
+                token = strtok_r(NULL, ",", &saveptr);
+            }
+            free(list);
+            break;
+        }
         case 'p':
             print_flags |= PRINT_DEVICE_ERRORS | PRINT_DEVICE
                     | PRINT_DEVICE_NAME | PRINT_POSSIBLE_EVENTS | PRINT_INPUT_PROPS;
@@ -579,6 +777,12 @@ int getevent_main(int argc, char *argv[])
             break;
         case 'l':
             print_flags |= PRINT_LABELS;
+            break;
+        case 'f':
+            if(parse_event_types(optarg) < 0) {
+                usage(argv[0]);
+                exit(1);
+            }
             break;
         case 'q':
             print_flags_set = 1;
@@ -613,6 +817,7 @@ int getevent_main(int argc, char *argv[])
     ufds = calloc(1, sizeof(ufds[0]));
     ufds[0].fd = inotify_init();
     ufds[0].events = POLLIN;
+    print_startup_timestamp();
     if(device) {
         if(!print_flags_set)
             print_flags |= PRINT_DEVICE_ERRORS;
@@ -667,6 +872,98 @@ int getevent_main(int argc, char *argv[])
                         fprintf(stderr, "could not get evdev event, %s\n", strerror(errno));
                         return 1;
                     }
+
+                    // Apply event filtering and Bluestacks mouse handling if enabled
+                    if(event_filter_enabled) {
+                        // Check basic event type filter
+                        if(!(event_filter_mask & (1 << event.type))) {
+                            continue;
+                        }
+
+                        // Ignore ABS_GAS and ABS_BRAKE events globally when BST_EV_ABS_AND_KEY is enabled
+                        if((event_filter_mask & (1 << BST_EV_ABS_AND_KEY)) && event.type == EV_ABS &&
+                            (event.code == ABS_GAS || event.code == ABS_BRAKE)) {
+                            continue;
+                        }
+
+                        // Track mouse button state for Mouse Devices
+                        struct mouse_device_state *mouse_state = find_mouse_device(i);
+                        if(mouse_state != NULL) {
+                            int is_drag_end = 0;
+
+                            if((event_filter_mask & (1 << BST_EV_ABS_AND_KEY))) {
+                                if(event.type == EV_ABS) {
+                                    // Update last known coordinates
+                                    if(event.code == ABS_X) {
+                                        mouse_state->last_x = event.value;
+                                    } else if(event.code == ABS_Y) {
+                                        mouse_state->last_y = event.value;
+                                    }
+                                }
+                                else if(event.type == EV_KEY) {
+                                    // Check for any mouse button (BTN_MOUSE is same as BTN_LEFT)
+                                    if(event.code == BTN_LEFT || event.code == BTN_RIGHT ||
+                                    event.code == BTN_MIDDLE || event.code == BTN_SIDE ||
+                                    event.code == BTN_EXTRA || event.code == BTN_MOUSE) {
+                                        if(event.value == 0) { // Button up (released)
+                                            mouse_state->buttons_pressed--;
+                                            if(mouse_state->buttons_pressed < 0)
+                                                mouse_state->buttons_pressed = 0;
+
+                                            // Check if this release just ended the drag (buttons now == 0)
+                                            if(mouse_state->buttons_pressed == 0) {
+                                                is_drag_end = 1;
+                                                // Clear skip_sync_event so SYN_REPORT after button release is not suppressed
+                                                // This ensures SYN_REPORT after button release is not suppressed
+                                                mouse_state->skip_sync_event = 0;
+                                            }
+                                        } else { // Button down (pressed)
+                                            mouse_state->buttons_pressed++;
+                                            // Clear skip_sync_event so SYN_REPORT after button press is not suppressed
+                                            mouse_state->skip_sync_event = 0;
+                                            // Generate fake events with last mouse position when button is pressed
+                                            if(mouse_state->last_x != -1 && mouse_state->last_y != -1) {
+                                                // Generate EV_ABS ABS_X event
+                                                if(get_time) {
+                                                    printf("[%8ld.%06ld] ", event.time.tv_sec, event.time.tv_usec);
+                                                }
+                                                if(print_device)
+                                                    printf("%s: ", device_names[i]);
+                                                print_event(EV_ABS, ABS_X, mouse_state->last_x, print_flags);
+                                                printf("%s", newline);
+
+                                                // Generate EV_ABS ABS_Y event
+                                                if(get_time) {
+                                                    printf("[%8ld.%06ld] ", event.time.tv_sec, event.time.tv_usec);
+                                                }
+                                                if(print_device)
+                                                    printf("%s: ", device_names[i]);
+                                                print_event(EV_ABS, ABS_Y, mouse_state->last_y, print_flags);
+                                                printf("%s", newline);
+                                            }
+                                        }
+                                    }
+                                }
+                                // Only suppress coordinate events during hover (no buttons pressed)
+                                // Exception: allow events when this is a drag end
+                                if(mouse_state->buttons_pressed == 0 && !is_drag_end) {
+                                    // Skip ABS X/Y coordinate events during hover
+                                    if(event.type == EV_ABS && (event.code == ABS_X || event.code == ABS_Y)) {
+                                        mouse_state->skip_sync_event = 1;
+                                        continue;
+                                    }
+                                }
+                                // Suppress SYN_REPORT only if it's from hover coordinate suppression
+                                // Don't suppress if this is a drag end (button just released)
+                                if(event.type == EV_SYN && event.code == SYN_REPORT &&
+                                   mouse_state->skip_sync_event && !is_drag_end) {
+                                    mouse_state->skip_sync_event = 0;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     if(get_time) {
                         printf("[%8ld.%06ld] ", event.time.tv_sec, event.time.tv_usec);
                     }
@@ -689,3 +986,9 @@ int getevent_main(int argc, char *argv[])
 
     return 0;
 }
+
+#ifdef GETEVENT_WITH_MAIN
+int main(int argc, char *argv[]) {
+    return getevent_main(argc, argv);
+}
+#endif
