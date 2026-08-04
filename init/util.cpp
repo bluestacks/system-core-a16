@@ -548,7 +548,12 @@ Result<MountAllOptions> ParseMountAll(const std::vector<std::string>& args) {
 
     std::string fstab_path;
     if (first_option_arg > 1) {
-        fstab_path = args[1];
+        auto expanded = ExpandProps(args[1]);
+        if (!expanded.ok()) {
+            return Error() << "mount_all: cannot expand '" << args[1]
+                           << "': " << expanded.error();
+        }
+        fstab_path = *expanded;
     } else if (compat_mode) {
         return Error() << "mount_all argument 1 must be the fstab path";
     }
@@ -620,7 +625,12 @@ Result<std::string> ParseUmountAll(const std::vector<std::string>& args) {
         }
         return {};
     }
-    return args[1];
+    auto expanded = ExpandProps(args[1]);
+    if (!expanded.ok()) {
+        return Error() << "umount_all: cannot expand '" << args[1]
+                       << "': " << expanded.error();
+    }
+    return *expanded;
 }
 
 static void InitAborter(const char* abort_message) {
