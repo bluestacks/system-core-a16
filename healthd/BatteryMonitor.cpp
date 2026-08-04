@@ -565,10 +565,9 @@ static void doLogValues(const HealthInfo& props, const struct healthd_config& he
              props.chargerAcOnline ? "a" : "", props.chargerUsbOnline ? "u" : "",
              props.chargerWirelessOnline ? "w" : "", props.chargerDockOnline ? "d" : "");
 
-    // A16DBG:P2:MECH BST: gate dmesg spam + set klog level (a13)
+    // A16DBG:P2:MECH BST: gate dmesg spam (a13)
     if (false)
         KLOG_WARNING(LOG_TAG, "%s\n", dmesgline);
-    klog_set_level(3);
 }
 
 void BatteryMonitor::logValues(const HealthInfo_2_1& health_info,
@@ -802,6 +801,7 @@ void BatteryMonitor::init(struct healthd_config *hc) {
     String8 path;
     char pval[PROPERTY_VALUE_MAX];
 
+    klog_set_level(3);
     mHealthdConfig = hc;
     std::unique_ptr<DIR, decltype(&closedir)> dir(opendir(POWER_SUPPLY_SYSFS_PATH), closedir);
     if (dir == NULL) {
