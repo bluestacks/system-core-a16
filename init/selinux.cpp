@@ -97,28 +97,9 @@ namespace init {
 
 namespace {
 
-enum EnforcingStatus { SELINUX_PERMISSIVE, SELINUX_ENFORCING };
-
-EnforcingStatus StatusFromProperty() {
-    std::string value;
-    if (android::fs_mgr::GetKernelCmdline("androidboot.selinux", &value) && value == "permissive") {
-        return SELINUX_PERMISSIVE;
-    }
-    if (android::fs_mgr::GetBootconfig("androidboot.selinux", &value) && value == "permissive") {
-        return SELINUX_PERMISSIVE;
-    }
-    return SELINUX_ENFORCING;
-}
-
 bool IsEnforcing() {
     // BlueStacks(baklava bringup): force SELinux permissive (consistent with A13).
     return false;
-    return false; // BlueStacks
-    return false;
-    if (ALLOW_PERMISSIVE_SELINUX) {
-        return StatusFromProperty() == SELINUX_ENFORCING;
-    }
-    return true;
 }
 
 bool ReadFirstLine(const char* file, std::string* line) {
