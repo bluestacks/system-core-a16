@@ -14,12 +14,14 @@ import /system/etc/init/hw/init.${ro.zygote}.rc
 # Cgroups are mounted right before early-init using list from /etc/cgroups.json
 on early-init
     # Disable sysrq from keyboard
-    write /proc/sys/kernel/sysrq 0
+    # BlueStacks kernels retain keyboard sysrq support for host diagnostics.
+    # write /proc/sys/kernel/sysrq 0
 
     # Android doesn't need kernel module autoloading, and it causes SELinux
     # denials.  So disable it by setting modprobe to the empty string.  Note: to
     # explicitly set a sysctl to an empty string, a trailing newline is needed.
-    write /proc/sys/kernel/modprobe \n
+    # BlueStacks guest drivers rely on kernel module autoloading.
+    # write /proc/sys/kernel/modprobe \n
 
     # Set the security context of /adb_keys if present.
     restorecon /adb_keys
@@ -224,7 +226,8 @@ on init
     chmod 0755 /dev/binderfs
 
     # Mount fusectl
-    mount fusectl none /sys/fs/fuse/connections
+    # The BlueStacks kernel does not require a second fusectl mount here.
+    # mount fusectl none /sys/fs/fuse/connections
 
     symlink /dev/binderfs/binder /dev/binder
     symlink /dev/binderfs/hwbinder /dev/hwbinder
@@ -272,6 +275,8 @@ on init
     # Symlink to keep legacy apps working in multi-user world
     symlink /storage/self/primary /mnt/sdcard
     symlink /mnt/user/0/primary /mnt/runtime/default/self/primary
+    symlink /sdcard /storage/sdcard0
+    symlink /sdcard /storage/sdcard
 
     write /proc/sys/kernel/panic_on_oops 1
     write /proc/sys/kernel/hung_task_timeout_secs 0
@@ -627,6 +632,7 @@ on late-fs
     # Ensure that tracefs has the correct permissions.
     # This does not work correctly if it is called in post-fs.
     chmod 0755 /sys/kernel/tracing
+    chmod 0755 /sys/kernel/debug
     chmod 0755 /sys/kernel/debug/tracing
 
     # HALs required before storage encryption can get unlocked (FBE)
@@ -682,6 +688,8 @@ on post-fs-data
 
     # Avoid predictable entropy pool. Carry over entropy from previous boot.
     copy /data/system/entropy.dat /dev/urandom
+    # Disable ARM-specific OpenSSL capability selection under translation.
+    export OPENSSL_armcap 0
 
     mkdir /data/vendor 0771 root root encryption=Require
     mkdir /data/vendor/hardware 0771 root root
@@ -1143,6 +1151,7 @@ on boot
     # parameters to match how it is managing things.
     write /proc/sys/vm/overcommit_memory 1
     write /proc/sys/vm/min_free_order_shift 4
+    write /proc/sys/vm/min_free_kbytes 4096
 
     # System server manages zram writeback
     chown root system /sys/block/zram0/idle
@@ -1308,7 +1317,6 @@ service console /system/bin/sh
     class core
     console
     disabled
-    user shell
     group shell log readproc
     seclabel u:r:shell:s0
     setenv HOSTNAME console
@@ -1326,7 +1334,8 @@ on property:ro.debuggable=1
     chmod 0775 /data/misc/a11ytrace
 
 on init && property:ro.debuggable=1
-    start console
+    # Console stays opt-in; when started it retains the A13 root UID behavior.
+    # start console
 
 # BlueStacks maintenance services and property triggers.
 service install_zip /system/bin/logwrapper /system/bin/install_studio_zip
