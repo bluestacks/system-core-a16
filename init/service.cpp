@@ -81,10 +81,6 @@ static Result<std::string> ComputeContextFromExecutable(const std::string& servi
     if (!is_selinux_enabled() || security_getenforce() == 0) {
         return "skip";
     }
-    // BlueStacks: permissive - skip SELinux domain check
-    if (!is_selinux_enabled() || security_getenforce() == 0) {
-        return "skip";
-    }
 
     std::string computed_context;
 
@@ -187,6 +183,10 @@ void Service::NotifyStateChange(const std::string& new_state) const {
 
     std::string prop_name = "init.svc." + name_;
     SetProperty(prop_name, new_state);
+
+    if (!GetBoolProperty("bst.debug.boottime_pid", false)) {
+        return;
+    }
 
     if (new_state == "running") {
         uint64_t start_ns = time_started_.time_since_epoch().count();
