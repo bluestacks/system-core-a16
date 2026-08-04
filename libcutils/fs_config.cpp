@@ -77,6 +77,7 @@ static const struct fs_path_config android_dirs[] = {
     { 00751, AID_ROOT,         AID_SHELL,        0, "system/bin" },
     { 00755, AID_ROOT,         AID_ROOT,         0, "system/etc/ppp" },
     { 00755, AID_ROOT,         AID_SHELL,        0, "system/vendor" },
+    { 00755, AID_ROOT,         AID_SHELL,        0, "system/xbin/bstk" },
     { 00750, AID_ROOT,         AID_SHELL,        0, "system/xbin" },
     { 00751, AID_ROOT,         AID_SHELL,        0, "system_ext/bin" },
     { 00751, AID_ROOT,         AID_SHELL,        0, "vendor/bin" },
@@ -173,6 +174,7 @@ static const struct fs_path_config android_files[] = {
 
     // the following two files are INTENTIONALLY set-uid, but they
     // are NOT included on user builds.
+    { 06755, AID_ROOT,      AID_ROOT,      0, "system/xbin/bstk/su" },
     { 06755, AID_ROOT,      AID_ROOT,      0, "system/xbin/procmem" },
     { 04750, AID_ROOT,      AID_SHELL,     0, "system/xbin/su" },
 
