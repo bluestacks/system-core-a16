@@ -860,11 +860,15 @@ static void load_override_properties() {
             load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
             LOG(INFO) << "Loaded /data/.bstconf.prop overrides";
         }
+        if (access("/data/.vendor.prop", R_OK) == 0) {
+            load_properties_from_file("/data/.vendor.prop", nullptr, &properties);
+            LOG(INFO) << "Loaded /data/.vendor.prop overrides";
+        }
         for (const auto& [name, value] : properties) {
             std::string error;
             if (PropertySetNoSocket(name, value, &error) != PROP_SUCCESS) {
                 LOG(ERROR) << "Could not set '" << name << "' to '" << value
-                           << "' in /data/local.prop: " << error;
+                           << "' while loading post-data overrides: " << error;
             }
         }
     }
@@ -1195,16 +1199,11 @@ void PropertyLoadBootDefaults() {
     // precedence is.
     LoadPropertiesFromSecondStageRes(&properties);
 
-    // A complete country/OEM override replaces system/build.prop when present.
-    if (access("/data/.bluestacks.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
-    } else if (auto res = load_properties_from_file("/system/build.prop", nullptr, &properties);
-               !res.ok()) {
+    if (auto res = load_properties_from_file("/system/build.prop", nullptr, &properties);
+        !res.ok()) {
         LOG(WARNING) << res.error();
     }
-    if (access("/data/.bstconf.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
-    }
+    const bool has_bluestacks_override = access("/data/.bluestacks.prop", R_OK) == 0;
 
     load_properties_from_partition("system_ext", /* support_legacy_path_until */ 30);
     load_properties_from_file("/system_dlkm/etc/build.prop", nullptr, &properties);
@@ -1214,13 +1213,22 @@ void PropertyLoadBootDefaults() {
     load_properties_from_file("/vendor/default.prop", nullptr, &properties);
     // }
     load_properties_from_file("/vendor/build.prop", nullptr, &properties);
-    if (access("/data/.vendor.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.vendor.prop", nullptr, &properties);
-    }
     load_properties_from_file("/vendor_dlkm/etc/build.prop", nullptr, &properties);
     load_properties_from_file("/odm_dlkm/etc/build.prop", nullptr, &properties);
     load_properties_from_partition("odm", /* support_legacy_path_until */ 28);
     load_properties_from_partition("product", /* support_legacy_path_until */ 30);
+
+    // These files are authoritative for per-instance and OEM values. Loading them after all
+    // partition defaults preserves their override semantics without dropping A16 partition data.
+    if (has_bluestacks_override) {
+        load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
+    }
+    if (access("/data/.bstconf.prop", R_OK) == 0) {
+        load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
+    }
+    if (access("/data/.vendor.prop", R_OK) == 0) {
+        load_properties_from_file("/data/.vendor.prop", nullptr, &properties);
+    }
     if (access("/data/.additional_system.prop", R_OK) == 0) {
         load_properties_from_file("/data/.additional_system.prop", nullptr, &properties);
     }
