@@ -846,7 +846,32 @@ static void update_sys_usb_config() {
     }
 }
 
+static void restorecon_bluestacks_property_files() {
+    static constexpr const char* kPropertyFiles[] = {
+            "/data/.bluestacks.prop",
+            "/data/.bstconf.prop",
+            "/data/.vendor.prop",
+            "/data/.additional_system.prop",
+    };
+
+    for (const char* path : kPropertyFiles) {
+        if (access(path, F_OK) != 0) {
+            if (errno != ENOENT) {
+                PLOG(WARNING) << "Could not access " << path << " before restorecon";
+            }
+            continue;
+        }
+        if (selinux_android_restorecon(path, 0) != 0) {
+            PLOG(WARNING) << "Could not restorecon " << path;
+        }
+    }
+}
+
 static void load_override_properties() {
+    // The guest payload creates these files outside Android init. Label them once /data is mounted
+    // and before property_service reads them under the post-data SELinux policy.
+    restorecon_bluestacks_property_files();
+
     if (ALLOW_LOCAL_PROP_OVERRIDE) {
         std::map<std::string, std::string> properties;
         load_properties_from_file("/data/local.prop", nullptr, &properties);
