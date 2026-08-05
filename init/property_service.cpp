@@ -850,6 +850,16 @@ static void load_override_properties() {
     if (ALLOW_LOCAL_PROP_OVERRIDE) {
         std::map<std::string, std::string> properties;
         load_properties_from_file("/data/local.prop", nullptr, &properties);
+        // BlueStacks files are created before Android starts but may only be visible after /data
+        // is mounted by init. Reload them with the persistent-property phase as an A16 fallback.
+        if (access("/data/.bluestacks.prop", R_OK) == 0) {
+            load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
+            LOG(INFO) << "Loaded /data/.bluestacks.prop overrides";
+        }
+        if (access("/data/.bstconf.prop", R_OK) == 0) {
+            load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
+            LOG(INFO) << "Loaded /data/.bstconf.prop overrides";
+        }
         for (const auto& [name, value] : properties) {
             std::string error;
             if (PropertySetNoSocket(name, value, &error) != PROP_SUCCESS) {
