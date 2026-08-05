@@ -208,6 +208,7 @@ int ueventd_main(int argc, char** argv) {
     umask(000);
 
     android::base::InitLogging(argv, &android::base::KernelLogger);
+    android::base::SetMinimumLogSeverity(android::base::WARNING);
 
     LOG(INFO) << "ueventd started!";
     { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: ueventd: post-started-log\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }

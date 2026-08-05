@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
         return ueventd_main(argc, argv);
     }
 
+    android::base::SetMinimumLogSeverity(android::base::WARNING);
     if (argc > 1) {
         if (!strcmp(argv[1], "subcontext")) {
             android::base::InitLogging(argv, &android::base::KernelLogger);
