@@ -585,6 +585,11 @@ std::string GetFstabPath() {
         }
     }
 
+    // App Player packages its board fstab in the legacy ramdisk location without a bootconfig
+    // hardware suffix. Keep the standard A16 lookup above and use the packaged file as fallback.
+    if (access("/fstab.baklava", F_OK) == 0) {
+        return "/fstab.baklava";
+    }
     return "";
 }
 

@@ -30,6 +30,7 @@ LOCAL_POST_INSTALL_CMD := mkdir -p $(addprefix $(TARGET_ROOT_OUT)/, \
     dev proc sys system data data_mirror odm oem config storage mnt apex bootstrap-apex debug_ramdisk \
     linkerconfig second_stage_resources postinstall tmp $(BOARD_ROOT_EXTRA_FOLDERS)); \
     ln -sf /system/bin $(TARGET_ROOT_OUT)/bin; \
+    ln -sf /system/lib $(TARGET_ROOT_OUT)/lib; \
     ln -sf /system/etc $(TARGET_ROOT_OUT)/etc; \
     ln -sfn /sys/kernel/debug $(TARGET_ROOT_OUT)/d; \
     ln -sf /storage/self/primary $(TARGET_ROOT_OUT)/sdcard; \
@@ -45,6 +46,7 @@ endif
 
 ALL_ROOTDIR_SYMLINKS := \
   $(TARGET_ROOT_OUT)/bin \
+  $(TARGET_ROOT_OUT)/lib \
   $(TARGET_ROOT_OUT)/etc \
   $(TARGET_ROOT_OUT)/bugreports \
   $(TARGET_ROOT_OUT)/d \
