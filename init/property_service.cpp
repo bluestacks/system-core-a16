@@ -867,6 +867,30 @@ static void restorecon_bluestacks_property_files() {
     }
 }
 
+static bool is_platform_classpath_identity_property(const std::string& name) {
+    // These values select SDK-gated boot classpath fragments before zygote starts. Per-instance
+    // files can outlive a guest upgrade, so accepting stale values here can remove A16 split jars.
+    return name == "ro.build.version.sdk" || name == "ro.build.version.preview_sdk" ||
+           name == "ro.build.version.preview_sdk_fingerprint" ||
+           name == "ro.build.version.codename" || name == "ro.build.version.all_codenames" ||
+           name == "ro.build.version.known_codenames";
+}
+
+static void load_bluestacks_properties_from_file(const char* path,
+                                                 std::map<std::string, std::string>* properties) {
+    std::map<std::string, std::string> overrides;
+    load_properties_from_file(path, nullptr, &overrides);
+
+    for (auto& [name, value] : overrides) {
+        if (is_platform_classpath_identity_property(name)) {
+            LOG(WARNING) << "Ignoring stale platform classpath identity property '" << name
+                         << "' from " << path;
+            continue;
+        }
+        properties->insert_or_assign(std::move(name), std::move(value));
+    }
+}
+
 static void load_override_properties() {
     // The guest payload creates these files outside Android init. Label them once /data is mounted
     // and before property_service reads them under the post-data SELinux policy.
@@ -878,16 +902,20 @@ static void load_override_properties() {
         // BlueStacks files are created before Android starts but may only be visible after /data
         // is mounted by init. Reload them with the persistent-property phase as an A16 fallback.
         if (access("/data/.bluestacks.prop", R_OK) == 0) {
-            load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
+            load_bluestacks_properties_from_file("/data/.bluestacks.prop", &properties);
             LOG(INFO) << "Loaded /data/.bluestacks.prop overrides";
         }
         if (access("/data/.bstconf.prop", R_OK) == 0) {
-            load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
+            load_bluestacks_properties_from_file("/data/.bstconf.prop", &properties);
             LOG(INFO) << "Loaded /data/.bstconf.prop overrides";
         }
         if (access("/data/.vendor.prop", R_OK) == 0) {
-            load_properties_from_file("/data/.vendor.prop", nullptr, &properties);
+            load_bluestacks_properties_from_file("/data/.vendor.prop", &properties);
             LOG(INFO) << "Loaded /data/.vendor.prop overrides";
+        }
+        if (access("/data/.additional_system.prop", R_OK) == 0) {
+            load_bluestacks_properties_from_file("/data/.additional_system.prop", &properties);
+            LOG(INFO) << "Loaded /data/.additional_system.prop overrides";
         }
         for (const auto& [name, value] : properties) {
             std::string error;
@@ -1246,16 +1274,16 @@ void PropertyLoadBootDefaults() {
     // These files are authoritative for per-instance and OEM values. Loading them after all
     // partition defaults preserves their override semantics without dropping A16 partition data.
     if (has_bluestacks_override) {
-        load_properties_from_file("/data/.bluestacks.prop", nullptr, &properties);
+        load_bluestacks_properties_from_file("/data/.bluestacks.prop", &properties);
     }
     if (access("/data/.bstconf.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.bstconf.prop", nullptr, &properties);
+        load_bluestacks_properties_from_file("/data/.bstconf.prop", &properties);
     }
     if (access("/data/.vendor.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.vendor.prop", nullptr, &properties);
+        load_bluestacks_properties_from_file("/data/.vendor.prop", &properties);
     }
     if (access("/data/.additional_system.prop", R_OK) == 0) {
-        load_properties_from_file("/data/.additional_system.prop", nullptr, &properties);
+        load_bluestacks_properties_from_file("/data/.additional_system.prop", &properties);
     }
 
     if (access(kDebugRamdiskProp, R_OK) == 0) {
