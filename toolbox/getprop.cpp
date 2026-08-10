@@ -30,6 +30,19 @@ using android::properties::PropertyInfoAreaFile;
 
 PropertyInfoAreaFile property_info_file;
 
+// Hide BlueStacks properties from bulk enumeration unless diagnostics are enabled.
+// Explicit getprop NAME queries remain available to guest runtime consumers.
+static bool show_bst_props = false;
+static const std::vector<std::string> bst_prop_list = {
+    "init.svc.bst", "init.svc.imeservice", "init.svc.appstatsd",
+    "init.svc.enable_arm_bin", "init.svc.postupgrade", "gsm.sim.bstserial",
+    "persist.sys.pcode", "persist.sys.devId", "persist.sys.abivalue",
+    "persist.sys.user.email", "ro.csc.sales_code", "ro.product.store",
+};
+static bool FindBstProp(const std::string& name) {
+    return std::find(bst_prop_list.begin(), bst_prop_list.end(), name) != bst_prop_list.end();
+}
+
 enum class ResultType {
     Value,
     Context,
@@ -67,31 +80,14 @@ void PrintAllProperties(ResultType result_type) {
     }
 
     for (const auto& [name, value] : properties) {
+        if (!show_bst_props && (name.compare(0, 3, "bst") == 0 || FindBstProp(name))) {
+            continue;
+        }
         std::cout << "[" << name << "]: [" << value << "]" << std::endl;
     }
 }
 
-// A16DBG:P2:MECH BST getprop property filter (anti-detection, a13)
-static bool show_bst_props = false;
-static const std::vector<std::string> bst_prop_list = {
-    "init.svc.bst", "init.svc.imeservice", "init.svc.appstatsd",
-    "init.svc.enable_arm_bin", "init.svc.postupgrade", "gsm.sim.bstserial",
-    "persist.sys.pcode", "persist.sys.devId", "persist.sys.abivalue",
-    "persist.sys.user.email", "ro.csc.sales_code", "ro.product.store",
-};
-static bool FindBstProp(const char* name) {
-    std::string s(name);
-    for (const auto& v : bst_prop_list) {
-        if (s == v) return true;
-    }
-    return false;
-}
-
 void PrintProperty(const char* name, const char* default_value, ResultType result_type) {
-    // A16DBG:P2:MECH BST: skip BST-specific props unless bst.debug.show_prop=1 (a13)
-    if (!show_bst_props && (strncmp(name, "bst", 3) == 0 || FindBstProp(name))) {
-        return;
-    }
     switch (result_type) {
         case ResultType::Value:
             std::cout << GetProperty(name, default_value) << std::endl;
@@ -113,7 +109,8 @@ void PrintProperty(const char* name, const char* default_value, ResultType resul
 
 extern "C" int getprop_main(int argc, char** argv) {
     auto result_type = ResultType::Value;
-    // A16DBG:P2:MECH BST: init show_bst_props from bst.debug.show_prop (a13)
+
+    // Keep bulk getprop output filtered while allowing an explicit diagnostic opt-in.
     char _bst_dbg[92] = {0};
     if (__system_property_get("bst.debug.show_prop", _bst_dbg) > 0) {
         show_bst_props = (strcmp(_bst_dbg, "1") == 0);
