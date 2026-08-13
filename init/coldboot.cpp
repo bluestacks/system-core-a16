@@ -82,7 +82,6 @@ void ColdBoot::Run() {
     android::base::Timer cold_boot_timer;
 
     RegenerateUevents();
-    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: coldboot: post-regen\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
 
     if (enable_parallel_restorecon_) {
         if (parallel_restorecon_queue_.empty()) {
@@ -116,9 +115,7 @@ void ColdBoot::Run() {
         selinux_android_restorecon("/sys", SELINUX_ANDROID_RESTORECON_RECURSE);
     }
 
-    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: coldboot: pre-runner-wait\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
     runner->Wait();
-    { int _fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC); if (_fd >= 0) { std::string _m = "<0>A16DBG: coldboot: post-runner-wait\n"; write(_fd, _m.c_str(), _m.size()); close(_fd); } }
 
     android::base::SetProperty(kColdBootDoneProp, "true");
     LOG(INFO) << "Coldboot took " << cold_boot_timer.duration().count() / 1000.0f << " seconds";

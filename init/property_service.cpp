@@ -1181,7 +1181,6 @@ static void BstReadSerialno() {
         std::string error;
         PropertySetNoSocket("ro.serialno", serialno, &error);
         PropertySetNoSocket("ro.boot.serialno", serialno, &error);
-        LOG(INFO) << "A16DBG:P2:MECH set ro.serialno from bst.serialno";
     }
 }
 
