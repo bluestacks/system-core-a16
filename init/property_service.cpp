@@ -1255,6 +1255,7 @@ void PropertyLoadBootDefaults() {
         !res.ok()) {
         LOG(WARNING) << res.error();
     }
+    const bool has_bluestacks_override = access("/data/.bluestacks.prop", R_OK) == 0;
 
     load_properties_from_partition("system_ext", /* support_legacy_path_until */ 30);
     load_properties_from_file("/system_dlkm/etc/build.prop", nullptr, &properties);
@@ -1268,6 +1269,21 @@ void PropertyLoadBootDefaults() {
     load_properties_from_file("/odm_dlkm/etc/build.prop", nullptr, &properties);
     load_properties_from_partition("odm", /* support_legacy_path_until */ 28);
     load_properties_from_partition("product", /* support_legacy_path_until */ 30);
+
+    // These files are authoritative for per-instance and OEM values. Loading them after all
+    // partition defaults preserves their override semantics without dropping A16 partition data.
+    if (has_bluestacks_override) {
+        load_bluestacks_properties_from_file("/data/.bluestacks.prop", &properties);
+    }
+    if (access("/data/.bstconf.prop", R_OK) == 0) {
+        load_bluestacks_properties_from_file("/data/.bstconf.prop", &properties);
+    }
+    if (access("/data/.vendor.prop", R_OK) == 0) {
+        load_bluestacks_properties_from_file("/data/.vendor.prop", &properties);
+    }
+    if (access("/data/.additional_system.prop", R_OK) == 0) {
+        load_bluestacks_properties_from_file("/data/.additional_system.prop", &properties);
+    }
 
     if (access(kDebugRamdiskProp, R_OK) == 0) {
         LOG(INFO) << "Loading " << kDebugRamdiskProp;
