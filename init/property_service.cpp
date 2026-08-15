@@ -867,13 +867,18 @@ static void restorecon_bluestacks_property_files() {
     }
 }
 
-static bool is_platform_classpath_identity_property(const std::string& name) {
+static bool is_stale_platform_identity_property(const std::string& name) {
     // These values select SDK-gated boot classpath fragments before zygote starts. Per-instance
     // files can outlive a guest upgrade, so accepting stale values here can remove A16 split jars.
-    return name == "ro.build.version.sdk" || name == "ro.build.version.preview_sdk" ||
+    const bool classpath_identity =
+           name == "ro.build.version.sdk" || name == "ro.build.version.preview_sdk" ||
            name == "ro.build.version.preview_sdk_fingerprint" ||
            name == "ro.build.version.codename" || name == "ro.build.version.all_codenames" ||
            name == "ro.build.version.known_codenames";
+    // Houdini 16 is arm64-only; old instance templates must not re-advertise ARM32 support.
+    const bool abi_identity = name == "ro.product.cpu.abilist" ||
+            name == "ro.product.cpu.abilist32" || name == "ro.product.cpu.abilist64";
+    return classpath_identity || abi_identity;
 }
 
 static void load_bluestacks_properties_from_file(const char* path,
@@ -882,9 +887,9 @@ static void load_bluestacks_properties_from_file(const char* path,
     load_properties_from_file(path, nullptr, &overrides);
 
     for (auto& [name, value] : overrides) {
-        if (is_platform_classpath_identity_property(name)) {
-            LOG(WARNING) << "Ignoring stale platform classpath identity property '" << name
-                         << "' from " << path;
+        if (is_stale_platform_identity_property(name)) {
+            LOG(WARNING) << "Ignoring stale platform identity property '" << name << "' from "
+                         << path;
             continue;
         }
         properties->insert_or_assign(std::move(name), std::move(value));
