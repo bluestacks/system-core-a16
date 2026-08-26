@@ -1315,6 +1315,14 @@ void PropertyLoadBootDefaults() {
     update_sys_usb_config();
     BstReadSerialno();
     BstSetAndroidImage();
+
+    // Setting ro.boot.hardware from the (disguised) ro.hardware value so both
+    // report the same SoC; the kernel cmdline has no androidboot.hardware.
+    std::string boot_hardware = GetProperty("ro.hardware", "");
+    if (!boot_hardware.empty()) {
+        std::string error;
+        PropertySetNoSocket("ro.boot.hardware", boot_hardware, &error);
+    }
 }
 
 void PropertyLoadDerivedDefaults() {
@@ -1417,7 +1425,7 @@ static void ExportKernelBootProps() {
         { "ro.boot.mode",       "ro.bootmode",   "unknown", },
         { "ro.boot.baseband",   "ro.baseband",   "unknown", },
         { "ro.boot.bootloader", "ro.bootloader", "unknown", },
-        { "ro.boot.hardware",   "ro.hardware",   "x86", },
+        { "ro.boot.hardware",   "ro.hardware",   UNSET, },
         { "ro.boot.revision",   "ro.revision",   "0", },
             // clang-format on
     };
