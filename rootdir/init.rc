@@ -657,16 +657,6 @@ on property:ro.product.cpu.abilist64=* && property:bootreceiver.enable=1
     write /sys/kernel/tracing/instances/bootreceiver/trace_options disable_on_free
     write /sys/kernel/tracing/instances/bootreceiver/events/error_report/error_report_end/enable 1
 
-# BlueStacks boot diagnostic: logcat -> kmsg for Player.log (Henry 7AJ/7R)
-service bs_bootlog /boot/bin/sh /boot/bin/bs_bootlog.sh
-    user root
-    group system
-    disabled
-    seclabel u:r:su:s0
-
-on post-fs-data
-    start bs_bootlog
-
 on post-fs-data
 
     # Start checkpoint before we touch data
