@@ -729,8 +729,6 @@ static int createProcessGroupInternal(uid_t uid, pid_t initialPid, std::string c
 }
 
 int createProcessGroup(uid_t uid, pid_t initialPid, bool memControl) {
-    // BS bringup: skip cgroup process group creation
-    return 0;
     if (uid < 0) {
         LOG(ERROR) << __func__ << ": invalid UID " << uid;
         return -1;
